@@ -15,7 +15,7 @@ FlockWidget::FlockWidget(QWidget *parent) :
   m_timer(new QTimer (this)),
   m_numFlockers(1000),
   m_flockerIdHead(0),
-  m_numTypes(6),
+  m_numTypes(12),
   m_initialSpeed(0.0020),
   m_minSpeed(    0.0035),
   m_maxSpeed(    0.0075)
@@ -107,7 +107,7 @@ void FlockWidget::takeStep()
     // Scale the force so that it will turn faster when "direction" is not
     // aligned well with force:
     const double fracSamePot = 0.50;
-    const double fracDiffPot = 0.10;
+    const double fracDiffPot = 0.30;
     const double fracAlign   = 1.00 - (fracSamePot + fracDiffPot);
     const double maxScale = 0.05;
     //
@@ -195,6 +195,9 @@ void FlockWidget::paintEvent(QPaintEvent *)
 {
   QPainter p (this);
 
+  p.setBackground(QBrush(Qt::black));
+  p.eraseRect(this->rect());
+
   // Sort Flockers by z-depth:
   QLinkedList<Flocker*> sortedFlockers;
 
@@ -252,7 +255,9 @@ void FlockWidget::addRandomFlocker()
 
   f->velocity() = m_initialSpeed;
 
-  unsigned int colorMod = (m_numTypes < 6) ? m_numTypes : 6;
+  const unsigned int numColors = 12;
+  const unsigned int colorMod = (m_numTypes < numColors) ? m_numTypes
+                                                         : numColors;
 
   switch (f->id() % colorMod)
   {
@@ -269,10 +274,28 @@ void FlockWidget::addRandomFlocker()
     f->color() = QColor(Qt::yellow);
     break;
   case 4:
-    f->color() = QColor(Qt::black);
+    f->color() = QColor(Qt::white);
     break;
   case 5:
     f->color() = QColor(Qt::cyan);
+    break;
+  case 6:
+    f->color() = QColor(Qt::magenta);
+    break;
+  case 7:
+    f->color() = QColor(Qt::darkGray);
+    break;
+  case 8:
+    f->color() = QColor(Qt::lightGray);
+    break;
+  case 9:
+    f->color() = QColor(Qt::darkMagenta);
+    break;
+  case 10:
+    f->color() = QColor(Qt::darkBlue);
+    break;
+  case 11:
+    f->color() = QColor(Qt::darkGreen);
     break;
   }
 
