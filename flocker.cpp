@@ -10,9 +10,7 @@ const double MINRADIUS = 0.010;
 const double MAXRADIUS = 0.020;
 
 Flocker::Flocker(unsigned int id, unsigned int type, QObject *parent) :
-  QObject(parent),
-  m_id(id),
-  m_type(type)
+  Entity(id, type, parent)
 {
 }
 

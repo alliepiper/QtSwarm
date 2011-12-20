@@ -1,3 +1,5 @@
+#include <Eigen/Array>
+
 #include <QtCore/QDebug>
 #include <QtCore/QTimer>
 
@@ -5,10 +7,12 @@
 #include <QtGui/QPen>
 #include <QtGui/QPainter>
 
-#include <Eigen/Array>
+#include <stdlib.h>
+#include <time.h>
 
 #include "flockwidget.h"
 #include "flocker.h"
+#include "target.h"
 
 FlockWidget::FlockWidget(QWidget *parent) :
   QWidget(parent),
@@ -16,11 +20,18 @@ FlockWidget::FlockWidget(QWidget *parent) :
   m_numFlockers(1000),
   m_flockerIdHead(0),
   m_numTypes(12),
+  m_numTargetTypes(12),
+  m_numTargetsPerType(3),
+  m_targetIdHead(0),
   m_initialSpeed(0.0020),
   m_minSpeed(    0.0035),
   m_maxSpeed(    0.0075)
 {
   this->initializeFlockers();
+  this->initializeTargets();
+
+  // Initialize RNG
+  srand(time(NULL));
 
   connect(m_timer, SIGNAL(timeout()), this, SLOT(takeStep()));
 
@@ -30,6 +41,7 @@ FlockWidget::FlockWidget(QWidget *parent) :
 FlockWidget::~FlockWidget()
 {
   this->cleanupFlockers();
+  this->cleanupTargets();
 }
 
 inline double V_morse(const double r) {
@@ -56,12 +68,32 @@ void FlockWidget::takeStep()
   QVector<Eigen::Vector3d> newDirections;
   newDirections.reserve(this->m_flockers.size());
 
+  // These flockers need to be removed:
+  QVector<Flocker*> deadFlockers;
+  deadFlockers.reserve(this->m_numFlockers);
+
+  // These targets have been eaten:
+  QVector<Target*> deadTargets;
+  deadTargets.reserve(m_targets.size());
+
   // Loop through each flocker
   foreach (Flocker *f_i, this->m_flockers) {
     // Calculate a force vector
     Eigen::Vector3d samePotForce (0.0, 0.0, 0.0);
     Eigen::Vector3d diffPotForce (0.0, 0.0, 0.0);
-    Eigen::Vector3d alignForce (0.0, 0.0, 0.0);
+    Eigen::Vector3d alignForce   (0.0, 0.0, 0.0);
+    Eigen::Vector3d targetForce  (0.0, 0.0, 0.0);
+
+    // Calculate a distance-weighted average vector towards the relevant
+    // targets
+    foreach (Target *t, this->m_targets[f_i->type()]) {
+      const Eigen::Vector3d r = t->pos() - f_i->pos();
+      const double rNorm = r.norm();
+      targetForce += (1.0/(rNorm*rNorm*rNorm)) * r;
+      if (rNorm < 0.05) {
+        deadTargets.push_back(t);
+      }
+    }
 
     // Average together V(|r_ij|) * r_ij
     foreach (Flocker *f_j, this->m_flockers) {
@@ -103,19 +135,27 @@ void FlockWidget::takeStep()
     if (!alignForce.isZero(0.1)) {
       alignForce.normalize();
     }
+    if (!targetForce.isZero(0.1)) {
+      targetForce.normalize();
+    }
 
     // Scale the force so that it will turn faster when "direction" is not
     // aligned well with force:
-    const double fracSamePot = 0.50;
-    const double fracDiffPot = 0.30;
-    const double fracAlign   = 1.00 - (fracSamePot + fracDiffPot);
-    const double maxScale = 0.05;
+    const double fracSamePot = 0.15;
+    const double fracDiffPot = 0.10;
+    const double fracTarget  = 0.60;
+    const double fracAlign   = 1.00 - (fracSamePot + fracDiffPot + fracTarget);
+    const double maxScale = 0.1;
     //
     Eigen::Vector3d force (fracSamePot * samePotForce +
                            fracDiffPot * diffPotForce +
-                           fracAlign   * alignForce);
+                           fracAlign   * alignForce +
+                           fracTarget  * targetForce);
     force.normalize();
-    const double directionDotForce = f_i->direction().dot(force);
+    double directionDotForce = f_i->direction().dot(force);
+    if (directionDotForce < 1e-4) {
+      directionDotForce = 1e-4;
+    }
     const double scale ( (1 - 0.5 * (directionDotForce + 1)) *
                          maxScale);
 
@@ -129,10 +169,6 @@ void FlockWidget::takeStep()
 
     newDirections.append((f_i->direction() + scale * force).normalized());
   }
-
-  // These floaters need to be removed:
-  QVector<Flocker*> deadFlockers;
-  deadFlockers.reserve(this->m_numFlockers);
 
   // Take step:
   int ind = 0;
@@ -178,7 +214,6 @@ void FlockWidget::takeStep()
       f->pos().z() = 0.999;
       f->velocity() *= bounceSlowdownFactor;
     }
-
   }
 
   // Replace dead floaters
@@ -186,6 +221,11 @@ void FlockWidget::takeStep()
     f->deleteLater();
     this->m_flockers.removeOne(f);
     this->addRandomFlocker();
+  }
+
+  // Randomize dead targets
+  foreach (Target *t, deadTargets) {
+    this->randomizeTarget(t);
   }
 
   this->update();
@@ -198,27 +238,53 @@ void FlockWidget::paintEvent(QPaintEvent *)
   p.setBackground(QBrush(Qt::black));
   p.eraseRect(this->rect());
 
-  // Sort Flockers by z-depth:
-  QLinkedList<Flocker*> sortedFlockers;
+  // Sort Entities by z-depth:
+  QLinkedList<Entity*> sortedEntities;
 
+  // Sort flockers
   for(QLinkedList<Flocker*>::const_iterator i = m_flockers.constBegin(),
       i_end = m_flockers.constEnd(); i != i_end; ++i) {
     bool inserted = false;
-    for(QLinkedList<Flocker*>::iterator j = sortedFlockers.begin(),
-        j_end = sortedFlockers.end(); j != j_end; ++j) {
+    for(QLinkedList<Entity*>::iterator j = sortedEntities.begin(),
+        j_end = sortedEntities.end(); j != j_end; ++j) {
       if ((*i)->pos().z() < (*j)->pos().z()) {
-        sortedFlockers.insert(j, *i);
+        sortedEntities.insert(j, *i);
         inserted = true;
         break;
       }
     }
     if (!inserted) {
-      sortedFlockers.append(*i);
+      sortedEntities.append(*i);
     }
   }
 
-  foreach (Flocker *f, sortedFlockers) {
-    f->draw(&p);
+  // Sort targets
+  for (int ind = 0; ind < m_targets.size(); ++ind) {
+    for(QLinkedList<Target*>::const_iterator it = m_targets[ind].constBegin(),
+        it_end = m_targets[ind].constEnd(); it != it_end; ++it) {
+      bool inserted = false;
+      for(QLinkedList<Entity*>::iterator jt = sortedEntities.begin(),
+          jt_end = sortedEntities.end(); jt != jt_end; ++jt) {
+        if ((*it)->pos().z() < (*jt)->pos().z()) {
+          sortedEntities.insert(jt, *it);
+          inserted = true;
+          break;
+        }
+      }
+      if (!inserted) {
+        sortedEntities.append(*it);
+      }
+    }
+  }
+
+  foreach (Entity *e, sortedEntities) {
+    e->draw(&p);
+  }
+
+  for (int i = 0; i < m_targets.size(); ++i) {
+    foreach (Target *t, m_targets[i]) {
+      t->draw(&p);
+    }
   }
 
 }
@@ -238,66 +304,105 @@ void FlockWidget::cleanupFlockers()
   this->m_flockers.clear();
 }
 
+void FlockWidget::initializeTargets()
+{
+  this->cleanupTargets();
+
+  for (unsigned int type = 0; type < m_numTargetTypes; ++type) {
+    for (unsigned int i = 0; i < m_numTargetsPerType; ++i) {
+      this->addRandomTarget(type);
+    }
+  }
+}
+
+void FlockWidget::cleanupTargets()
+{
+
+  for (int i = 0; i < m_targets.size(); ++i) {
+    qDeleteAll(m_targets[i]);
+  }
+
+  this->m_targets.clear();
+}
+
 void FlockWidget::addRandomFlocker()
 {
   Flocker *f = new Flocker (m_flockerIdHead, m_flockerIdHead % m_numTypes);
   m_flockerIdHead++;
 
-  f->pos().setRandom();
-  f->pos().normalize();
-
-  if (f->pos().x() < 0.0) f->pos().x() = fabs(f->pos().x());
-  if (f->pos().y() < 0.0) f->pos().y() = fabs(f->pos().y());
-  if (f->pos().z() < 0.0) f->pos().z() = fabs(f->pos().z());
+  this->randomizeVector(&f->pos());
 
   f->direction().setRandom();
   f->direction().normalize();
 
   f->velocity() = m_initialSpeed;
 
-  const unsigned int numColors = 12;
+  f->color() = this->typeToColor(f->type());
+
+  this->m_flockers.push_back(f);
+}
+
+void FlockWidget::addRandomTarget(const unsigned int type)
+{
+  Target *newTarget = new Target(m_targetIdHead++, type);
+
+  randomizeVector(&newTarget->pos());
+  newTarget->color() = this->typeToColor(type);
+
+  if (type + 1 > static_cast<unsigned int>(m_targets.size())) {
+    m_targets.resize(type + 1);
+  }
+
+  m_targets[type].push_back(newTarget);
+}
+
+void FlockWidget::randomizeTarget(Target *t)
+{
+  this->randomizeVector(&t->pos());
+}
+
+void FlockWidget::randomizeVector(Eigen::Vector3d *vec)
+{
+  static const double invRANDMAX = 1.0/static_cast<double>(RAND_MAX);
+  vec->x() = rand() * invRANDMAX;
+  vec->y() = rand() * invRANDMAX;
+  vec->z() = rand() * invRANDMAX;
+}
+
+QColor FlockWidget::typeToColor(const unsigned int type)
+{
+  static const unsigned int numColors = 12;
   const unsigned int colorMod = (m_numTypes < numColors) ? m_numTypes
                                                          : numColors;
 
-  switch (f->id() % colorMod)
+  switch (type % colorMod)
   {
   case 0:
-    f->color() = QColor(Qt::blue);
-    break;
+    return QColor(Qt::blue);
   case 1:
-    f->color() = QColor(Qt::red);
-    break;
+    return QColor(Qt::red);
   case 2:
-    f->color() = QColor(Qt::green);
-    break;
+    return QColor(Qt::green);
   case 3:
-    f->color() = QColor(Qt::yellow);
-    break;
+    return QColor(Qt::yellow);
   case 4:
-    f->color() = QColor(Qt::white);
-    break;
+    return QColor(Qt::white);
   case 5:
-    f->color() = QColor(Qt::cyan);
-    break;
+    return QColor(Qt::cyan);
   case 6:
-    f->color() = QColor(Qt::magenta);
-    break;
+    return QColor(Qt::magenta);
   case 7:
-    f->color() = QColor(Qt::darkGray);
-    break;
+    return QColor(Qt::darkGray);
   case 8:
-    f->color() = QColor(Qt::lightGray);
-    break;
+    return QColor(Qt::lightGray);
   case 9:
-    f->color() = QColor(Qt::darkMagenta);
-    break;
+    return QColor(Qt::darkMagenta);
   case 10:
-    f->color() = QColor(Qt::darkBlue);
-    break;
+    return QColor(Qt::darkBlue);
   case 11:
-    f->color() = QColor(Qt::darkGreen);
-    break;
+    return QColor(Qt::darkGreen);
+  default:
+    qWarning() << "Unrecognized type:" << type;
+    return QColor();
   }
-
-  this->m_flockers.push_back(f);
 }
