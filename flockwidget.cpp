@@ -281,12 +281,6 @@ void FlockWidget::paintEvent(QPaintEvent *)
     e->draw(&p);
   }
 
-  for (int i = 0; i < m_targets.size(); ++i) {
-    foreach (Target *t, m_targets[i]) {
-      t->draw(&p);
-    }
-  }
-
 }
 
 void FlockWidget::initializeFlockers()
