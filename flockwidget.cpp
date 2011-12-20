@@ -90,7 +90,7 @@ void FlockWidget::takeStep()
       const Eigen::Vector3d r = t->pos() - f_i->pos();
       const double rNorm = r.norm();
       targetForce += (1.0/(rNorm*rNorm*rNorm)) * r;
-      if (rNorm < 0.05) {
+      if (rNorm < 0.025) {
         deadTargets.push_back(t);
       }
     }
@@ -145,7 +145,7 @@ void FlockWidget::takeStep()
     const double fracDiffPot = 0.10;
     const double fracTarget  = 0.60;
     const double fracAlign   = 1.00 - (fracSamePot + fracDiffPot + fracTarget);
-    const double maxScale = 0.1;
+    const double maxScale = 0.25;
     //
     Eigen::Vector3d force (fracSamePot * samePotForce +
                            fracDiffPot * diffPotForce +
