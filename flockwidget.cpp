@@ -170,50 +170,15 @@ void FlockWidget::takeStep()
     newDirections.append((f_i->direction() + scale * force).normalized());
   }
 
-  // Take step:
+  // Update flocker directions:
   int ind = 0;
   foreach (Flocker *f, this->m_flockers) {
     f->direction() = newDirections[ind++];
-    f->takeStep();
+  }
 
-//    // Check that each flocker is still one the screen. If not remove it
-//    if ( f->pos().x() < 0 || f->pos().x() > 1.0 ||
-//         f->pos().y() < 0 || f->pos().y() > 1.0 ){
-//      deadFlockers.append(f);
-//    }
-
-    // Bounce at boundaries, slow down
-    const double bounceSlowdownFactor = 0.50;
-    if (f->pos().x() < 0.0) {
-      f->direction().x() =  fabs(f->direction().x());
-      f->pos().x() = 0.001;
-      f->velocity() *= bounceSlowdownFactor;
-    }
-    else if (f->pos().x() > 1.0) {
-      f->direction().x() = -fabs(f->direction().x());
-      f->pos().x() = 0.999;
-      f->velocity() *= bounceSlowdownFactor;
-    }
-    if (f->pos().y() < 0.0) {
-      f->direction().y() =  fabs(f->direction().y());
-      f->pos().y() = 0.001;
-      f->velocity() *= bounceSlowdownFactor;
-    }
-    else if (f->pos().y() > 1.0) {
-      f->direction().y() = -fabs(f->direction().y());
-      f->pos().y() = 0.999;
-      f->velocity() *= bounceSlowdownFactor;
-    }
-    if (f->pos().z() < 0.0) {
-      f->direction().z() =  fabs(f->direction().z());
-      f->pos().z() = 0.001;
-      f->velocity() *= bounceSlowdownFactor;
-    }
-    else if (f->pos().z() > 1.0) {
-      f->direction().z() = -fabs(f->direction().z());
-      f->pos().z() = 0.999;
-      f->velocity() *= bounceSlowdownFactor;
-    }
+  // Take steps
+  foreach (Entity *e, this->m_entities) {
+    e->takeStep();
   }
 
   // Replace dead floaters
@@ -240,40 +205,18 @@ void FlockWidget::paintEvent(QPaintEvent *)
 
   // Sort Entities by z-depth:
   QLinkedList<Entity*> sortedEntities;
-
-  // Sort flockers
-  for(QLinkedList<Flocker*>::const_iterator i = m_flockers.constBegin(),
-      i_end = m_flockers.constEnd(); i != i_end; ++i) {
+  foreach (Entity *e, m_entities) {
     bool inserted = false;
-    for(QLinkedList<Entity*>::iterator j = sortedEntities.begin(),
-        j_end = sortedEntities.end(); j != j_end; ++j) {
-      if ((*i)->pos().z() < (*j)->pos().z()) {
-        sortedEntities.insert(j, *i);
+    for(QLinkedList<Entity*>::iterator jt = sortedEntities.begin(),
+        jt_end = sortedEntities.end(); jt != jt_end; ++jt) {
+      if (e->pos().z() < (*jt)->pos().z()) {
+        sortedEntities.insert(jt, e);
         inserted = true;
         break;
       }
     }
     if (!inserted) {
-      sortedEntities.append(*i);
-    }
-  }
-
-  // Sort targets
-  for (int ind = 0; ind < m_targets.size(); ++ind) {
-    for(QLinkedList<Target*>::const_iterator it = m_targets[ind].constBegin(),
-        it_end = m_targets[ind].constEnd(); it != it_end; ++it) {
-      bool inserted = false;
-      for(QLinkedList<Entity*>::iterator jt = sortedEntities.begin(),
-          jt_end = sortedEntities.end(); jt != jt_end; ++jt) {
-        if ((*it)->pos().z() < (*jt)->pos().z()) {
-          sortedEntities.insert(jt, *it);
-          inserted = true;
-          break;
-        }
-      }
-      if (!inserted) {
-        sortedEntities.append(*it);
-      }
+      sortedEntities.append(e);
     }
   }
 
@@ -333,7 +276,15 @@ void FlockWidget::addRandomFlocker()
 
   f->color() = this->typeToColor(f->type());
 
-  this->m_flockers.push_back(f);
+  m_flockers.push_back(f);
+  m_entities.push_back(f);
+}
+
+void FlockWidget::removeFlocker(Flocker *f)
+{
+  m_flockers.removeOne(f);
+  m_entities.removeOne(f);
+  f->deleteLater();
 }
 
 void FlockWidget::addRandomTarget(const unsigned int type)
@@ -342,12 +293,23 @@ void FlockWidget::addRandomTarget(const unsigned int type)
 
   randomizeVector(&newTarget->pos());
   newTarget->color() = this->typeToColor(type);
+  newTarget->velocity() = m_minSpeed;
+  randomizeVector(&newTarget->direction());
+  newTarget->direction().normalize();
 
   if (type + 1 > static_cast<unsigned int>(m_targets.size())) {
     m_targets.resize(type + 1);
   }
 
   m_targets[type].push_back(newTarget);
+  m_entities.push_back(newTarget);
+}
+
+void FlockWidget::removeTarget(Target *t)
+{
+  m_targets[t->type()].removeOne(t);
+  m_entities.removeOne(t);
+  t->deleteLater();
 }
 
 void FlockWidget::randomizeTarget(Target *t)

@@ -41,7 +41,6 @@ void Flocker::draw(QPainter *p)
   devDir[0] = m_direction.x() * radius;
   devDir[1] = m_direction.y() * radius;
 
-//  p->setPen(Qt::NoPen);
   p->setPen(Qt::black);
   QBrush brush (m_color, Qt::SolidPattern);
   p->setBrush(brush);
@@ -66,4 +65,37 @@ void Flocker::draw(QPainter *p)
 void Flocker::takeStep()
 {
   m_pos += m_velocity * m_direction;
+
+  // Bounce at boundaries, slow down
+  const double bounceSlowdownFactor = 0.50;
+  if (m_pos.x() < 0.0) {
+    m_direction.x() =  fabs(m_direction.x());
+    m_pos.x() = 0.001;
+    m_velocity *= bounceSlowdownFactor;
+  }
+  else if (m_pos.x() > 1.0) {
+    m_direction.x() = -fabs(m_direction.x());
+    m_pos.x() = 0.999;
+    m_velocity *= bounceSlowdownFactor;
+  }
+  if (m_pos.y() < 0.0) {
+    m_direction.y() =  fabs(m_direction.y());
+    m_pos.y() = 0.001;
+    m_velocity *= bounceSlowdownFactor;
+  }
+  else if (m_pos.y() > 1.0) {
+    m_direction.y() = -fabs(m_direction.y());
+    m_pos.y() = 0.999;
+    m_velocity *= bounceSlowdownFactor;
+  }
+  if (m_pos.z() < 0.0) {
+    m_direction.z() =  fabs(m_direction.z());
+    m_pos.z() = 0.001;
+    m_velocity *= bounceSlowdownFactor;
+  }
+  else if (m_pos.z() > 1.0) {
+    m_direction.z() = -fabs(m_direction.z());
+    m_pos.z() = 0.999;
+    m_velocity *= bounceSlowdownFactor;
+  }
 }

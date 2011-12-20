@@ -5,7 +5,6 @@
 Target::Target(unsigned int id, unsigned int type, QObject *parent) :
   Entity(id, type, parent)
 {
-  m_velocity = 0.0;
 }
 
 Target::~Target()
@@ -24,8 +23,7 @@ void Target::draw(QPainter *p)
   double radius = 0.005 * m_pos.z() + 0.005;
   radius *= 0.5 * (width + height);
 
-//  p->setPen(Qt::NoPen);
-    p->setPen(Qt::black);
+  p->setPen(Qt::black);
   p->setBrush(QBrush(m_color, Qt::SolidPattern));
 
   p->drawEllipse(devPos, radius, radius);
@@ -35,4 +33,31 @@ void Target::draw(QPainter *p)
 
 void Target::takeStep()
 {
+  m_pos += m_velocity * m_direction;
+
+  // Bounce at boundaries
+  if (m_pos.x() < 0.0) {
+    m_direction.x() =  fabs(m_direction.x());
+    m_pos.x() = 0.001;
+  }
+  else if (m_pos.x() > 1.0) {
+    m_direction.x() = -fabs(m_direction.x());
+    m_pos.x() = 0.999;
+  }
+  if (m_pos.y() < 0.0) {
+    m_direction.y() =  fabs(m_direction.y());
+    m_pos.y() = 0.001;
+  }
+  else if (m_pos.y() > 1.0) {
+    m_direction.y() = -fabs(m_direction.y());
+    m_pos.y() = 0.999;
+  }
+  if (m_pos.z() < 0.0) {
+    m_direction.z() =  fabs(m_direction.z());
+    m_pos.z() = 0.001;
+  }
+  else if (m_pos.z() > 1.0) {
+    m_direction.z() = -fabs(m_direction.z());
+    m_pos.z() = 0.999;
+  }
 }

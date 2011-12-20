@@ -7,6 +7,7 @@
 
 #include <Eigen/Core>
 
+class Entity;
 class Flocker;
 class QTimer;
 class Target;
@@ -29,7 +30,9 @@ protected:
   void initializeTargets();
   void cleanupTargets();
   void addRandomFlocker();
+  void removeFlocker(Flocker *f);
   void addRandomTarget(const unsigned int type);
+  void removeTarget(Target *t);
   void randomizeTarget(Target *t);
 
   // 0->1
@@ -37,6 +40,7 @@ protected:
   QColor typeToColor(const unsigned int type);
 
   QTimer *m_timer;
+  QLinkedList<Entity*> m_entities;
   QLinkedList<Flocker*> m_flockers;
   QVector<QLinkedList<Target*> > m_targets;
   unsigned int m_numFlockers;
