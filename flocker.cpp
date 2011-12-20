@@ -41,8 +41,8 @@ void Flocker::draw(QPainter *p)
   devDir[0] = m_direction.x() * radius;
   devDir[1] = m_direction.y() * radius;
 
-
-  p->setPen(Qt::NoPen);
+//  p->setPen(Qt::NoPen);
+  p->setPen(Qt::black);
   QBrush brush (m_color, Qt::SolidPattern);
   p->setBrush(brush);
 

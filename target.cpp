@@ -24,8 +24,9 @@ void Target::draw(QPainter *p)
   double radius = 0.005 * m_pos.z() + 0.005;
   radius *= 0.5 * (width + height);
 
+//  p->setPen(Qt::NoPen);
+    p->setPen(Qt::black);
   p->setBrush(QBrush(m_color, Qt::SolidPattern));
-  p->setPen(Qt::NoPen);
 
   p->drawEllipse(devPos, radius, radius);
 
