@@ -4,14 +4,16 @@ SOURCES += \
     flockwidget.cpp \
     target.cpp \
     entity.cpp \
-    distancecache.cpp
+    distancecache.cpp \
+    predator.cpp
 
 HEADERS += \
     flocker.h \
     flockwidget.h \
     target.h \
     entity.h \
-    distancecache.h
+    distancecache.h \
+    predator.h
 
 INCLUDEPATH += \
     /usr/include/eigen2/

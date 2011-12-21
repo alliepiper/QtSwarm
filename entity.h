@@ -18,6 +18,7 @@ public:
 
   unsigned int id() const {return m_id;}
   unsigned int type() const {return m_type;}
+
   Eigen::Vector3d & pos() {return m_pos;}
   Eigen::Vector3d & direction() {return m_direction;}
   double & velocity() {return m_velocity;}

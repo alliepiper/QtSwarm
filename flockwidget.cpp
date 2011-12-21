@@ -12,6 +12,7 @@
 
 #include "flockwidget.h"
 #include "flocker.h"
+#include "predator.h"
 #include "target.h"
 
 FlockWidget::FlockWidget(QWidget *parent) :
@@ -20,6 +21,7 @@ FlockWidget::FlockWidget(QWidget *parent) :
   m_entityIdHead(0),
   m_numFlockers(500),
   m_numFlockerTypes(12),
+  m_numPredators(30),
   m_numTargetTypes(12),
   m_numTargetsPerType(3),
   m_initialSpeed(0.0020),
@@ -27,6 +29,7 @@ FlockWidget::FlockWidget(QWidget *parent) :
   m_maxSpeed(    0.0075)
 {
   this->initializeFlockers();
+  this->initializePredators();
   this->initializeTargets();
 
   // Initialize RNG
@@ -40,6 +43,7 @@ FlockWidget::FlockWidget(QWidget *parent) :
 FlockWidget::~FlockWidget()
 {
   this->cleanupFlockers();
+  this->cleanupPredators();
   this->cleanupTargets();
 }
 
@@ -70,7 +74,7 @@ inline double V_morse_ND(const double r) {
 void FlockWidget::takeStep()
 {
   QVector<Eigen::Vector3d> newDirections;
-  newDirections.reserve(this->m_flockers.size());
+  newDirections.reserve(m_flockers.size());
 
   // These flockers need to be removed:
   QVector<Flocker*> deadFlockers;
@@ -79,40 +83,44 @@ void FlockWidget::takeStep()
   QVector<Target*> deadTargets;
 
   // Allocate loop variables
-  Eigen::Vector3d samePotForce (0.0, 0.0, 0.0);
-  Eigen::Vector3d diffPotForce (0.0, 0.0, 0.0);
-  Eigen::Vector3d alignForce   (0.0, 0.0, 0.0);
-  Eigen::Vector3d targetForce  (0.0, 0.0, 0.0);
+  Eigen::Vector3d samePotForce;
+  Eigen::Vector3d diffPotForce;
+  Eigen::Vector3d alignForce;
+  Eigen::Vector3d predatorForce;
+  Eigen::Vector3d targetForce;
   Eigen::Vector3d r;
   // Weight for each competing force
-  double diffPotWeight = 0.25; // morse potential, all type()s
-  double samePotWeight = 0.50; // morse potential, same type()
-  double targetWeight  = 0.75; // 1/r^2 attraction to all targets
-  double alignWeight   = 0.50; // Align to average neighbor heading
+  double diffPotWeight  = 0.25; // morse potential, all type()s
+  double samePotWeight  = 0.50; // morse potential, same type()
+  double alignWeight    = 0.50; // Align to average neighbor heading
+  double predatorWeight = 1.50; // 1/r^2 attraction/repulsion to all predators
+  double targetWeight   = 0.75; // 1/r^2 attraction to all targets
   // newDirection = (oldDirection + (factor) * maxTurn * force).normalized()
   const double maxTurn = 0.25;
   // velocity *= 1.0 + speedupFactor * direction.dot(samePotForce)
   const double speedupFactor = 0.075;
 
   // Normalize force weights:
-  double invWeightSum = 1.0 / (diffPotWeight + samePotWeight + targetWeight +
-                               alignWeight);
-  diffPotWeight *= invWeightSum;
-  samePotWeight *= invWeightSum;
-  targetWeight *= invWeightSum;
-  alignWeight *= invWeightSum;
+  double invWeightSum = 1.0 / (diffPotWeight + samePotWeight + alignWeight +
+                               predatorWeight + targetWeight);
+  diffPotWeight  *= invWeightSum;
+  samePotWeight  *= invWeightSum;
+  alignWeight    *= invWeightSum;
+  predatorWeight *= invWeightSum;
+  targetWeight   *= invWeightSum;
 
-  // Loop through each flocker
-  foreach (Flocker *f_i, this->m_flockers) {
+  // Loop through each flocker and predator:
+  foreach (Flocker *f_i, m_flockers) {
     // Reset forces
     samePotForce.setZero();
     diffPotForce.setZero();
     alignForce.setZero();
+    predatorForce.setZero();
     targetForce.setZero();
 
     // Calculate a distance-weighted average vector towards the relevant
     // targets
-    foreach (Target *t, this->m_targets[f_i->type()]) {
+    foreach (Target *t, m_targets[f_i->type()]) {
       r = t->pos() - f_i->pos();
       const double rNorm = r.norm();
       targetForce += (1.0/(rNorm*rNorm*rNorm)) * r;
@@ -122,34 +130,77 @@ void FlockWidget::takeStep()
     }
 
     // Average together V(|r_ij|) * r_ij
-    foreach (Flocker *f_j, this->m_flockers) {
+    foreach (Flocker *f_j, m_flockers) {
       if (f_i == f_j) continue;
       r = f_j->pos() - f_i->pos();
 
       // General cutoff
-      if (r.x() > 0.2 || r.y() > 0.2 || r.z() > 0.2) {
+      if (r.x() > 0.3 || r.y() > 0.3 || r.z() > 0.3) {
         continue;
       }
 
       const double rNorm = r.norm();
       const double rInvNorm = 1.0 / rNorm;
 
-      double V = std::numeric_limits<double>::max();
+      Predator *pred_i = qobject_cast<Predator*>(f_i);
+      Predator *pred_j = qobject_cast<Predator*>(f_j);
+      // Both or neither are predators, use morse potential
+      if ((!pred_i && !pred_j) ||
+          ( pred_i &&  pred_j) ){
+        double V = std::numeric_limits<double>::max();
 
-      // Apply cutoff for morse interaction
-      if (rNorm < 0.10) {
-        V = V_morse_ND(rNorm);
-        diffPotForce += (V*rInvNorm*rInvNorm) * r;
-      }
-
-      // Alignment -- steer towards the heading of nearby flockers
-      if (f_i->type() == f_j->type() &&
-          rNorm < 0.20 && rNorm > 0.001) {
-        if (V == std::numeric_limits<double>::max()) {
+        // Apply cutoff for morse interaction
+        if (rNorm < 0.10) {
           V = V_morse_ND(rNorm);
+          diffPotForce += (V*rInvNorm*rInvNorm) * r;
         }
-        samePotForce += (V *rInvNorm*rInvNorm) * r;
-        alignForce += rInvNorm * f_j->direction();
+
+        // Alignment -- steer towards the heading of nearby flockers
+        if (f_i->type() == f_j->type() &&
+            rNorm < 0.20 && rNorm > 0.001) {
+          if (V == std::numeric_limits<double>::max()) {
+            V = V_morse_ND(rNorm);
+          }
+          samePotForce += (V *rInvNorm*rInvNorm) * r;
+          alignForce += rInvNorm * f_j->direction();
+        }
+      }
+      // One is a predator, one is not. Evade / Pursue
+      else {
+        Predator *p;
+        Flocker *f;
+        if (pred_i) {
+          p = pred_i;
+          f = f_j;
+        }
+        else {
+          p = pred_j;
+          f = f_i;
+        }
+
+        // Calculate distance between them
+        r = f->pos() - p->pos();
+        const double rNorm = r.norm();
+        const double rInvNorm = 1.0 / rNorm;
+        // The flocker is being updated
+        if (f == f_i) {
+          if (rNorm < 0.3) {
+            // Did the predator catch the flocker?
+            if (rNorm < 0.025) {
+              deadFlockers.append(f);
+            }
+            //               normalize          1/r^2        vector
+            predatorForce += rInvNorm * (rInvNorm * rInvNorm) * r;
+          }
+        }
+        // The predator is being updated
+        else {
+          // Cutoff distance for predator
+          if (rNorm < 0.15) {
+            //               normalize          1/r^2        vector
+            predatorForce += rInvNorm * (rInvNorm * rInvNorm) * r;
+          }
+        }
       }
     }
 
@@ -162,20 +213,25 @@ void FlockWidget::takeStep()
     if (!alignForce.isZero(0.1)) {
       alignForce.normalize();
     }
+    if (!predatorForce.isZero(0.1)) {
+      predatorForce.normalize();
+    }
     if (!targetForce.isZero(0.1)) {
       targetForce.normalize();
     }
 
     // Scale the force so that it will turn faster when "direction" is not
     // aligned well with force:
-    Eigen::Vector3d force (samePotWeight * samePotForce +
-                           diffPotWeight * diffPotForce +
-                           alignWeight   * alignForce +
-                           targetWeight  * targetForce);
+    Eigen::Vector3d force (samePotWeight  * samePotForce  +
+                           diffPotWeight  * diffPotForce  +
+                           alignWeight    * alignForce    +
+                           predatorWeight * predatorForce +
+                           targetWeight   * targetForce   );
     force.normalize();
+    // cap dot factor, ensures that *some* finite turning will occur
     double directionDotForce = f_i->direction().dot(force);
-    if (directionDotForce < 1e-4) {
-      directionDotForce = 1e-4;
+    if (directionDotForce > 0.85) {
+      directionDotForce = 0.85;
     }
     const double scale ( (1 - 0.5 * (directionDotForce + 1)) *
                          maxTurn);
@@ -192,24 +248,25 @@ void FlockWidget::takeStep()
 
   // Update flocker directions:
   int ind = 0;
-  foreach (Flocker *f, this->m_flockers) {
+  foreach (Flocker *f, m_flockers) {
     f->direction() = newDirections[ind++];
   }
 
   // Take steps
-  foreach (Entity *e, this->m_entities) {
+  foreach (Entity *e, m_entities) {
     e->takeStep();
   }
 
-  // Replace dead floaters
+  // Replace dead flockers
   foreach (Flocker *f, deadFlockers) {
-    f->deleteLater();
-    this->m_flockers.removeOne(f);
-    this->addRandomFlocker();
+//    this->addRandomFlocker(f->type());
+//    this->addRandomFlocker();
+    this->removeFlocker(f);
   }
 
   // Randomize dead targets
   foreach (Target *t, deadTargets) {
+    this->addFlockerFromEntity(t);
     this->randomizeTarget(t);
   }
 
@@ -223,9 +280,21 @@ void FlockWidget::paintEvent(QPaintEvent *)
   p.setBackground(QBrush(Qt::black));
   p.eraseRect(this->rect());
 
+  // Count types
+  QVector<unsigned int> counts;
+  counts.resize(m_numFlockerTypes + 1);
+
   // Sort Entities by z-depth:
   QLinkedList<Entity*> sortedEntities;
   foreach (Entity *e, m_entities) {
+    Flocker *f = qobject_cast<Flocker*>(e);
+    Predator *p = qobject_cast<Predator*>(e);
+    if (p) {
+      ++counts[m_numFlockerTypes];
+    }
+    else if (f) {
+      ++counts[f->type()];
+    }
     bool inserted = false;
     for(QLinkedList<Entity*>::iterator jt = sortedEntities.begin(),
         jt_end = sortedEntities.end(); jt != jt_end; ++jt) {
@@ -244,6 +313,16 @@ void FlockWidget::paintEvent(QPaintEvent *)
     e->draw(&p);
   }
 
+  // Print out number of types
+  for (unsigned int i = 0, y = 10; i < m_numFlockerTypes + 1; ++i) {
+    unsigned int count = counts[i];
+    if (i < m_numFlockerTypes)
+      p.setPen(this->typeToColor(i));
+    else
+      p.setPen(Qt::red);
+    p.drawText(5, y, QString::number(count));
+    y += 20;
+  }
 }
 
 void FlockWidget::initializeFlockers()
@@ -257,8 +336,24 @@ void FlockWidget::initializeFlockers()
 
 void FlockWidget::cleanupFlockers()
 {
-  qDeleteAll(this->m_flockers);
-  this->m_flockers.clear();
+  foreach (Flocker *f, m_flockers) {
+    m_entities.removeOne(f);
+  }
+  qDeleteAll(m_flockers);
+  m_flockers.clear();
+  m_predators.clear();
+}
+
+void FlockWidget::addFlockerFromEntity(const Entity *e)
+{
+  Flocker *newFlocker = new Flocker (m_entityIdHead++, e->type());
+  newFlocker->pos() = e->pos();
+  newFlocker->direction() = e->direction();
+  newFlocker->velocity() = e->velocity();
+  newFlocker->color() = e->color();
+
+  m_flockers.push_back(newFlocker);
+  m_entities.push_back(newFlocker);
 }
 
 void FlockWidget::addRandomFlocker()
@@ -286,6 +381,51 @@ void FlockWidget::removeFlocker(Flocker *f)
   f->deleteLater();
 }
 
+void FlockWidget::initializePredators()
+{
+  this->cleanupPredators();
+
+  for (unsigned int i = 0; i < m_numPredators; ++i) {
+    this->addRandomPredator();
+  }
+}
+
+void FlockWidget::cleanupPredators()
+{
+  foreach (Predator *p, this->m_predators) {
+    m_flockers.removeOne(p);
+    m_entities.removeOne(p);
+  }
+  qDeleteAll(this->m_predators);
+  this->m_predators.clear();
+}
+
+void FlockWidget::addRandomPredator()
+{
+  Predator *p = new Predator (m_entityIdHead++, 0);
+
+  this->randomizeVector(&p->pos());
+
+  p->direction().setRandom();
+  p->direction().normalize();
+
+  p->velocity() = m_initialSpeed;
+
+  p->color() = QColor(Qt::red);
+
+  m_predators.push_back(p);
+  m_flockers.push_back(p);
+  m_entities.push_back(p);
+}
+
+void FlockWidget::removePredator(Predator *p)
+{
+  m_predators.removeOne(p);
+  m_flockers.removeOne(p);
+  m_entities.removeOne(p);
+  p->deleteLater();
+}
+
 void FlockWidget::initializeTargets()
 {
   this->cleanupTargets();
@@ -299,7 +439,6 @@ void FlockWidget::initializeTargets()
 
 void FlockWidget::cleanupTargets()
 {
-
   for (int i = 0; i < m_targets.size(); ++i) {
     qDeleteAll(m_targets[i]);
   }
@@ -348,8 +487,8 @@ void FlockWidget::randomizeVector(Eigen::Vector3d *vec)
 QColor FlockWidget::typeToColor(const unsigned int type)
 {
   static const unsigned int numColors = 12;
-  const unsigned int colorMod = (m_numFlockerTypes < numColors) ? m_numFlockerTypes
-                                                         : numColors;
+  const unsigned int colorMod = (m_numFlockerTypes < numColors)
+      ? m_numFlockerTypes : numColors;
 
   switch (type % colorMod)
   {

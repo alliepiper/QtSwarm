@@ -9,6 +9,7 @@
 
 class Entity;
 class Flocker;
+class Predator;
 class QTimer;
 class Target;
 
@@ -27,8 +28,14 @@ protected:
 
   void initializeFlockers();
   void cleanupFlockers();
+  void addFlockerFromEntity(const Entity *e);
   void addRandomFlocker();
   void removeFlocker(Flocker *f);
+
+  void initializePredators();
+  void cleanupPredators();
+  void addRandomPredator();
+  void removePredator(Predator *p);
 
   void initializeTargets();
   void cleanupTargets();
@@ -41,13 +48,14 @@ protected:
   QColor typeToColor(const unsigned int type);
 
   QTimer *m_timer;
-
   QLinkedList<Entity*> m_entities;
   QLinkedList<Flocker*> m_flockers;
   QVector<QLinkedList<Target*> > m_targets;
+  QLinkedList<Predator*> m_predators;
   unsigned int m_entityIdHead;
   unsigned int m_numFlockers;
   unsigned int m_numFlockerTypes;
+  unsigned int m_numPredators;
   unsigned int m_numTargetTypes;
   unsigned int m_numTargetsPerType;
   double m_initialSpeed;
