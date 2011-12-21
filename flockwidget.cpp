@@ -17,12 +17,11 @@
 FlockWidget::FlockWidget(QWidget *parent) :
   QWidget(parent),
   m_timer(new QTimer (this)),
-  m_numFlockers(1000),
-  m_flockerIdHead(0),
-  m_numTypes(12),
+  m_entityIdHead(0),
+  m_numFlockers(500),
+  m_numFlockerTypes(12),
   m_numTargetTypes(12),
   m_numTargetsPerType(3),
-  m_targetIdHead(0),
   m_initialSpeed(0.0020),
   m_minSpeed(    0.0035),
   m_maxSpeed(    0.0075)
@@ -44,12 +43,17 @@ FlockWidget::~FlockWidget()
   this->cleanupTargets();
 }
 
+// See http://www.musicdsp.org/showone.php?id=222 for more info
+inline float fastexp5(float x) {
+    return (120+x*(120+x*(60+x*(20+x*(5+x)))))*0.0083333333f;
+}
+
 inline double V_morse(const double r) {
   const double depth = 1.00;
-  const double rad   = 0.075;
+  const double rad   = 0.10;
   const double alpha = 2.00;
 
-  const double tmpTerm = ( 1 - exp( -alpha * (r - rad) ) );
+  const double tmpTerm = ( 1 - fastexp5( -alpha * (r - rad) ) );
   double V = depth * tmpTerm * tmpTerm;
 
   return V - depth;
@@ -70,24 +74,46 @@ void FlockWidget::takeStep()
 
   // These flockers need to be removed:
   QVector<Flocker*> deadFlockers;
-  deadFlockers.reserve(this->m_numFlockers);
 
   // These targets have been eaten:
   QVector<Target*> deadTargets;
-  deadTargets.reserve(m_targets.size());
+
+  // Allocate loop variables
+  Eigen::Vector3d samePotForce (0.0, 0.0, 0.0);
+  Eigen::Vector3d diffPotForce (0.0, 0.0, 0.0);
+  Eigen::Vector3d alignForce   (0.0, 0.0, 0.0);
+  Eigen::Vector3d targetForce  (0.0, 0.0, 0.0);
+  Eigen::Vector3d r;
+  // Weight for each competing force
+  double diffPotWeight = 0.25; // morse potential, all type()s
+  double samePotWeight = 0.50; // morse potential, same type()
+  double targetWeight  = 0.75; // 1/r^2 attraction to all targets
+  double alignWeight   = 0.50; // Align to average neighbor heading
+  // newDirection = (oldDirection + (factor) * maxTurn * force).normalized()
+  const double maxTurn = 0.25;
+  // velocity *= 1.0 + speedupFactor * direction.dot(samePotForce)
+  const double speedupFactor = 0.075;
+
+  // Normalize force weights:
+  double invWeightSum = 1.0 / (diffPotWeight + samePotWeight + targetWeight +
+                               alignWeight);
+  diffPotWeight *= invWeightSum;
+  samePotWeight *= invWeightSum;
+  targetWeight *= invWeightSum;
+  alignWeight *= invWeightSum;
 
   // Loop through each flocker
   foreach (Flocker *f_i, this->m_flockers) {
-    // Calculate a force vector
-    Eigen::Vector3d samePotForce (0.0, 0.0, 0.0);
-    Eigen::Vector3d diffPotForce (0.0, 0.0, 0.0);
-    Eigen::Vector3d alignForce   (0.0, 0.0, 0.0);
-    Eigen::Vector3d targetForce  (0.0, 0.0, 0.0);
+    // Reset forces
+    samePotForce.setZero();
+    diffPotForce.setZero();
+    alignForce.setZero();
+    targetForce.setZero();
 
     // Calculate a distance-weighted average vector towards the relevant
     // targets
     foreach (Target *t, this->m_targets[f_i->type()]) {
-      const Eigen::Vector3d r = t->pos() - f_i->pos();
+      r = t->pos() - f_i->pos();
       const double rNorm = r.norm();
       targetForce += (1.0/(rNorm*rNorm*rNorm)) * r;
       if (rNorm < 0.025) {
@@ -98,20 +124,22 @@ void FlockWidget::takeStep()
     // Average together V(|r_ij|) * r_ij
     foreach (Flocker *f_j, this->m_flockers) {
       if (f_i == f_j) continue;
-      Eigen::Vector3d r = f_j->pos() - f_i->pos();
-      const double rNorm = r.norm();
+      r = f_j->pos() - f_i->pos();
 
       // General cutoff
-      if (rNorm > 0.5) {
+      if (r.x() > 0.2 || r.y() > 0.2 || r.z() > 0.2) {
         continue;
       }
+
+      const double rNorm = r.norm();
+      const double rInvNorm = 1.0 / rNorm;
 
       double V = std::numeric_limits<double>::max();
 
       // Apply cutoff for morse interaction
       if (rNorm < 0.10) {
         V = V_morse_ND(rNorm);
-        diffPotForce += (V /(rNorm*rNorm)) * r;
+        diffPotForce += (V*rInvNorm*rInvNorm) * r;
       }
 
       // Alignment -- steer towards the heading of nearby flockers
@@ -120,10 +148,9 @@ void FlockWidget::takeStep()
         if (V == std::numeric_limits<double>::max()) {
           V = V_morse_ND(rNorm);
         }
-        samePotForce += (V /(rNorm*rNorm)) * r;
-        alignForce += (1.0/rNorm) * f_j->direction();
+        samePotForce += (V *rInvNorm*rInvNorm) * r;
+        alignForce += rInvNorm * f_j->direction();
       }
-
     }
 
     if (!diffPotForce.isZero(0.1)) {
@@ -141,32 +168,25 @@ void FlockWidget::takeStep()
 
     // Scale the force so that it will turn faster when "direction" is not
     // aligned well with force:
-    const double fracSamePot = 0.15;
-    const double fracDiffPot = 0.10;
-    const double fracTarget  = 0.60;
-    const double fracAlign   = 1.00 - (fracSamePot + fracDiffPot + fracTarget);
-    const double maxScale = 0.25;
-    //
-    Eigen::Vector3d force (fracSamePot * samePotForce +
-                           fracDiffPot * diffPotForce +
-                           fracAlign   * alignForce +
-                           fracTarget  * targetForce);
+    Eigen::Vector3d force (samePotWeight * samePotForce +
+                           diffPotWeight * diffPotForce +
+                           alignWeight   * alignForce +
+                           targetWeight  * targetForce);
     force.normalize();
     double directionDotForce = f_i->direction().dot(force);
     if (directionDotForce < 1e-4) {
       directionDotForce = 1e-4;
     }
     const double scale ( (1 - 0.5 * (directionDotForce + 1)) *
-                         maxScale);
+                         maxTurn);
 
     // Accelerate towards goal
-    const double speedupFactor = 0.075;
-    //
     const double directionDotPotForce = f_i->direction().dot(samePotForce);
     f_i->velocity() *= 1.0 + speedupFactor * directionDotPotForce;
     if (f_i->velocity() < m_minSpeed) f_i->velocity() = m_minSpeed;
     else if (f_i->velocity() > m_maxSpeed) f_i->velocity() = m_maxSpeed;
 
+    // Keep new direction
     newDirections.append((f_i->direction() + scale * force).normalized());
   }
 
@@ -241,31 +261,10 @@ void FlockWidget::cleanupFlockers()
   this->m_flockers.clear();
 }
 
-void FlockWidget::initializeTargets()
-{
-  this->cleanupTargets();
-
-  for (unsigned int type = 0; type < m_numTargetTypes; ++type) {
-    for (unsigned int i = 0; i < m_numTargetsPerType; ++i) {
-      this->addRandomTarget(type);
-    }
-  }
-}
-
-void FlockWidget::cleanupTargets()
-{
-
-  for (int i = 0; i < m_targets.size(); ++i) {
-    qDeleteAll(m_targets[i]);
-  }
-
-  this->m_targets.clear();
-}
-
 void FlockWidget::addRandomFlocker()
 {
-  Flocker *f = new Flocker (m_flockerIdHead, m_flockerIdHead % m_numTypes);
-  m_flockerIdHead++;
+  Flocker *f = new Flocker (m_entityIdHead, m_entityIdHead % m_numFlockerTypes);
+  m_entityIdHead++;
 
   this->randomizeVector(&f->pos());
 
@@ -287,9 +286,30 @@ void FlockWidget::removeFlocker(Flocker *f)
   f->deleteLater();
 }
 
+void FlockWidget::initializeTargets()
+{
+  this->cleanupTargets();
+
+  for (unsigned int type = 0; type < m_numTargetTypes; ++type) {
+    for (unsigned int i = 0; i < m_numTargetsPerType; ++i) {
+      this->addRandomTarget(type);
+    }
+  }
+}
+
+void FlockWidget::cleanupTargets()
+{
+
+  for (int i = 0; i < m_targets.size(); ++i) {
+    qDeleteAll(m_targets[i]);
+  }
+
+  this->m_targets.clear();
+}
+
 void FlockWidget::addRandomTarget(const unsigned int type)
 {
-  Target *newTarget = new Target(m_targetIdHead++, type);
+  Target *newTarget = new Target(m_entityIdHead++, type);
 
   randomizeVector(&newTarget->pos());
   newTarget->color() = this->typeToColor(type);
@@ -328,7 +348,7 @@ void FlockWidget::randomizeVector(Eigen::Vector3d *vec)
 QColor FlockWidget::typeToColor(const unsigned int type)
 {
   static const unsigned int numColors = 12;
-  const unsigned int colorMod = (m_numTypes < numColors) ? m_numTypes
+  const unsigned int colorMod = (m_numFlockerTypes < numColors) ? m_numFlockerTypes
                                                          : numColors;
 
   switch (type % colorMod)
@@ -336,7 +356,7 @@ QColor FlockWidget::typeToColor(const unsigned int type)
   case 0:
     return QColor(Qt::blue);
   case 1:
-    return QColor(Qt::red);
+    return QColor(Qt::darkCyan);
   case 2:
     return QColor(Qt::green);
   case 3:
