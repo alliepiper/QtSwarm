@@ -47,9 +47,9 @@ inline double V_morse_ND(const double r) {
 
 // Weight for each competing force
 static double diffPotWeight  = 0.10; // morse potential, all type()s
-static double samePotWeight  = 0.40; // morse potential, same type()
-static double alignWeight    = 0.50; // Align to average neighbor heading
-static double predatorWeight = 1.00; // 1/r^2 attraction/repulsion to all predators
+static double samePotWeight  = 0.70; // morse potential, same type()
+static double alignWeight    = 0.70; // Align to average neighbor heading
+static double predatorWeight = 1.20; // 1/r^2 attraction/repulsion to all predators
 static double targetWeight   = 0.85; // 1/r^2 attraction to all targets
 static double clickWeight    = 2.00; // 1/r^2 attraction to clicked point
 // newDirection = (oldDirection + (factor) * maxTurn * force).normalized()
@@ -80,10 +80,10 @@ FlockWidget::FlockWidget(QWidget *parent) :
   m_entityIdHead(0),
   m_numFlockers(500),
   m_numFlockerTypes(12),
-  m_numPredators(30),
+  m_numPredators(20),
   m_numPredatorTypes(2),
   m_numTargetTypes(12),
-  m_numTargetsPerType(4),
+  m_numTargetsPerType(8),
   m_initialSpeed(0.0050),
   m_minSpeed(    0.0015),
   m_maxSpeed(    0.0075),
@@ -252,8 +252,8 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
             result.deadFlocker = f;
           }
           else {
-            //               2    normalize          1/r^3                  vector
-            predatorForce += 2. * rInvNorm * (rInvNorm) * r;
+            //               normalize               1/r^3               vector
+            predatorForce += rInvNorm * (rInvNorm * rInvNorm * rInvNorm) * r;
           }
         }
       }
