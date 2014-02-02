@@ -39,7 +39,7 @@ protected:
 
   void initializePredators();
   void cleanupPredators();
-  void addRandomPredator();
+  void addRandomPredator(const unsigned int type);
   void removePredator(Predator *p);
 
   void initializeTargets();
@@ -61,6 +61,7 @@ protected:
   unsigned int m_numFlockers;
   unsigned int m_numFlockerTypes;
   unsigned int m_numPredators;
+  unsigned int m_numPredatorTypes;
   unsigned int m_numTargetTypes;
   unsigned int m_numTargetsPerType;
   double m_initialSpeed;

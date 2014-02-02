@@ -46,15 +46,15 @@ inline double V_morse_ND(const double r) {
 }
 
 // Weight for each competing force
-static double diffPotWeight  = 0.25; // morse potential, all type()s
-static double samePotWeight  = 0.50; // morse potential, same type()
+static double diffPotWeight  = 0.10; // morse potential, all type()s
+static double samePotWeight  = 0.40; // morse potential, same type()
 static double alignWeight    = 0.50; // Align to average neighbor heading
 static double predatorWeight = 1.00; // 1/r^2 attraction/repulsion to all predators
-static double targetWeight   = 0.75; // 1/r^2 attraction to all targets
+static double targetWeight   = 0.85; // 1/r^2 attraction to all targets
 static double clickWeight    = 2.00; // 1/r^2 attraction to clicked point
 // newDirection = (oldDirection + (factor) * maxTurn * force).normalized()
 static const double maxTurn = 0.25;
-// velocity *= 1.0 + speedupFactor * direction.dot(samePotForce)
+// velocity *= 1.0 + speedupFactor * direction.dot(goalForce)
 static const double speedupFactor = 0.075;
 
 // Normalize force weights:
@@ -81,10 +81,11 @@ FlockWidget::FlockWidget(QWidget *parent) :
   m_numFlockers(500),
   m_numFlockerTypes(12),
   m_numPredators(30),
+  m_numPredatorTypes(2),
   m_numTargetTypes(12),
-  m_numTargetsPerType(3),
-  m_initialSpeed(0.0020),
-  m_minSpeed(    0.0035),
+  m_numTargetsPerType(4),
+  m_initialSpeed(0.0050),
+  m_minSpeed(    0.0015),
   m_maxSpeed(    0.0075),
   m_lastRender(QDateTime::currentDateTime()),
   m_currentFPS(0.f),
@@ -166,7 +167,7 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
         if (rNorm < 0.025)
           result.deadTarget = t;
         else
-          targetForce += (1.0/(rNorm*rNorm*rNorm)) * r;
+          targetForce += (1.0/(rNorm*rNorm*rNorm*rNorm)) * r;
       }
     }
   }
@@ -184,7 +185,8 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
     r = f_j->pos() - f_i->pos();
 
     // General cutoff
-    if (r.x() > 0.3 || r.y() > 0.3 || r.z() > 0.3)
+    const double cutoff = pred_i ? 0.6 : 0.3;
+    if (r.x() > cutoff || r.y() > cutoff || r.z() > cutoff)
       continue;
 
     const double rNorm = r.norm();
@@ -192,25 +194,37 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
 
     const bool pred_j = f_j->eType() == Entity::PredatorEntity;
 
-    // Both or neither are predators, use morse potential
-    if ((!pred_i && !pred_j) ||
-        ( pred_i &&  pred_j) ){
+    // Neither are predators, use morse potential
+    bool bothArePredators = pred_i && pred_j;
+    bool neitherArePredators = !pred_i && !pred_j;
+    bool typesMatch = f_i->type() == f_j->type();
+
+    if (neitherArePredators || (bothArePredators && typesMatch)) {
       double V = std::numeric_limits<double>::max();
 
       // Apply cutoff for morse interaction
-      if (rNorm < 0.10) {
+      if (rNorm < 0.20) {
         V = V_morse_ND(rNorm);
         diffPotForce += (V*rInvNorm*rInvNorm) * r;
       }
 
       // Alignment -- steer towards the heading of nearby flockers
-      if (f_i->type() == f_j->type() &&
-          rNorm < 0.20 && rNorm > 0.001) {
+      if (typesMatch &&
+          rNorm < 0.30 && rNorm > 0.001) {
         if (V == std::numeric_limits<double>::max()) {
           V = V_morse_ND(rNorm);
         }
         samePotForce += (V *rInvNorm*rInvNorm) * r;
         alignForce += rInvNorm * f_j->direction();
+      }
+    }
+    else if (bothArePredators && !typesMatch) {
+      r = f_i->pos() - f_j->pos();
+      const double rNorm = r.norm();
+      if (rNorm < 0.5) {
+        const double rInvNorm = rNorm > 0.01 ? 1.0 / rNorm : 1.0;
+        //              2    normalize     1/r2     vector
+        predatorForce = 2. * rInvNorm * (rInvNorm * rInvNorm) * r;
       }
     }
     // One is a predator, one is not. Evade / Pursue
@@ -230,16 +244,16 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
       r = f->pos() - p->pos();
       const double rNorm = r.norm();
       const double rInvNorm = rNorm > 0.01 ? 1.0 / rNorm : 1.0;
-      // The flocker is being updated
       if (pred_j) {
+        // The flocker is being updated
         if (rNorm < 0.3) {
           // Did the predator catch the flocker?
           if (rNorm < 0.025) {
             result.deadFlocker = f;
           }
           else {
-            //               normalize     1/r     vector
-            predatorForce += rInvNorm * (rInvNorm) * r;
+            //               2    normalize          1/r^3                  vector
+            predatorForce += 2. * rInvNorm * (rInvNorm) * r;
           }
         }
       }
@@ -247,8 +261,12 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
       else {
         // Cutoff distance for predator
         if (rNorm < 0.15) {
-          //               2    normalize          1/r^2        vector
+          //               2    normalize          1/r*2         vector
           predatorForce += 2. * rInvNorm * (rInvNorm * rInvNorm) * r;
+        }
+        else {
+          //               normalize     1/r     vector
+          predatorForce += rInvNorm * (rInvNorm) * r;
         }
       }
     }
@@ -294,9 +312,10 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
                        maxTurn);
 
   // Accelerate towards goal
-  const double directionDotPotForce = f_i->direction().dot(samePotForce);
-  result.newVelocity = f_i->velocity() *
-      (1.0 + speedupFactor * directionDotPotForce);
+  const double goalForce = f_i->direction().dot(0.15 * predatorForce +
+                                                0.25 * targetForce +
+                                                0.6 * samePotForce);
+  result.newVelocity = f_i->velocity() * (1.0 + speedupFactor * goalForce);
   if (result.newVelocity < m_minSpeed)
     result.newVelocity = m_minSpeed;
   else if (result.newVelocity > m_maxSpeed)
@@ -404,8 +423,14 @@ void FlockWidget::paintEvent(QPaintEvent *)
     e->draw(&p);
   }
 
-  // Print out number of types
+  // FPS
   unsigned int y = 10;
+  p.setPen(Qt::white);
+  p.drawText(5, y, QString("FPS: %1 (%2)")
+             .arg(m_fpsSum / m_fpsCount).arg(m_currentFPS));
+  y += 20;
+
+  // Print out number of types
   for (unsigned int i = 0; i < m_numFlockerTypes + 1; ++i) {
     unsigned int count = counts[i];
     if (i < m_numFlockerTypes)
@@ -416,10 +441,6 @@ void FlockWidget::paintEvent(QPaintEvent *)
     y += 20;
   }
 
-  p.setPen(Qt::white);
-  p.drawText(5, y, QString("FPS: %1 (%2)")
-             .arg(m_fpsSum / m_fpsCount).arg(m_currentFPS));
-  y += 20;
 }
 
 void FlockWidget::keyPressEvent(QKeyEvent *e)
@@ -509,8 +530,11 @@ void FlockWidget::initializePredators()
 {
   this->cleanupPredators();
 
+  unsigned int type = 0;
   for (unsigned int i = 0; i < m_numPredators; ++i) {
-    this->addRandomPredator();
+    this->addRandomPredator(type);
+    if (++type == m_numPredatorTypes)
+      type = 0;
   }
 }
 
@@ -524,9 +548,9 @@ void FlockWidget::cleanupPredators()
   this->m_predators.clear();
 }
 
-void FlockWidget::addRandomPredator()
+void FlockWidget::addRandomPredator(const unsigned int type)
 {
-  Predator *p = new Predator (m_entityIdHead++, 0);
+  Predator *p = new Predator (m_entityIdHead++, type);
 
   this->randomizeVector(&p->pos());
 

@@ -14,6 +14,21 @@ Predator::Predator(unsigned int id, unsigned int type, QObject *parent) :
   m_brushes.push_back(Qt::SolidPattern);
   m_brushes.push_back(Qt::SolidPattern);
   m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
+  m_brushes.push_back(Qt::SolidPattern);
   m_brushes.push_back(Qt::Dense1Pattern);
   m_brushes.push_back(Qt::Dense2Pattern);
   m_brushes.push_back(Qt::Dense3Pattern);
@@ -69,7 +84,8 @@ Predator::Predator(unsigned int id, unsigned int type, QObject *parent) :
   m_brushes.push_back(Qt::Dense2Pattern);
   m_brushes.push_back(Qt::Dense1Pattern);
 
-  std::rotate(m_brushes.begin(), m_brushes.begin() + (id % m_brushes.size()),
+  std::rotate(m_brushes.begin(),
+              m_brushes.begin() + (rand() % m_brushes.size()),
               m_brushes.end());
 
   m_current = m_brushes.begin();

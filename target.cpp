@@ -13,6 +13,7 @@ Target::~Target()
 
 void Target::draw(QPainter *p)
 {
+  return;
   p->save();
 
   // Device coordinates:
@@ -35,29 +36,36 @@ void Target::takeStep()
 {
   m_pos += m_velocity * m_direction;
 
+  // Use a reduced boundary for these -- keeps the flockers from bouncing off
+  // of the walls as much
+  const double validFraction = 0.6;
+
+  const double minVal = (1.0 - validFraction) / 2.0;
+  const double maxVal = 1.0 - minVal;
+
   // Bounce at boundaries
-  if (m_pos.x() < 0.0) {
+  if (m_pos.x() < minVal) {
     m_direction.x() =  fabs(m_direction.x());
-    m_pos.x() = 0.001;
+    m_pos.x() = minVal;
   }
-  else if (m_pos.x() > 1.0) {
+  else if (m_pos.x() > maxVal) {
     m_direction.x() = -fabs(m_direction.x());
-    m_pos.x() = 0.999;
+    m_pos.x() = maxVal;
   }
-  if (m_pos.y() < 0.0) {
+  if (m_pos.y() < minVal) {
     m_direction.y() =  fabs(m_direction.y());
-    m_pos.y() = 0.001;
+    m_pos.y() = minVal;
   }
-  else if (m_pos.y() > 1.0) {
+  else if (m_pos.y() > maxVal) {
     m_direction.y() = -fabs(m_direction.y());
-    m_pos.y() = 0.999;
+    m_pos.y() = maxVal;
   }
-  if (m_pos.z() < 0.0) {
+  if (m_pos.z() < minVal) {
     m_direction.z() =  fabs(m_direction.z());
-    m_pos.z() = 0.001;
+    m_pos.z() = minVal;
   }
-  else if (m_pos.z() > 1.0) {
+  else if (m_pos.z() > maxVal) {
     m_direction.z() = -fabs(m_direction.z());
-    m_pos.z() = 0.999;
+    m_pos.z() = maxVal;
   }
 }
