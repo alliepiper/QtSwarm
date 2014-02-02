@@ -2,6 +2,7 @@
 #define FLOCKWIDGET_H
 
 #include <QtCore/QLinkedList>
+#include <QtCore/QDateTime>
 
 #include <QtGui/QWidget>
 
@@ -61,6 +62,11 @@ protected:
   double m_initialSpeed;
   double m_minSpeed;
   double m_maxSpeed;
+
+  QDateTime m_lastRender;
+  float m_currentFPS;
+  float m_fpsSum;
+  float m_fpsCount;
 };
 
 #endif // FLOCKWIDGET_H

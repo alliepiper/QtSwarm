@@ -26,7 +26,11 @@ FlockWidget::FlockWidget(QWidget *parent) :
   m_numTargetsPerType(3),
   m_initialSpeed(0.0020),
   m_minSpeed(    0.0035),
-  m_maxSpeed(    0.0075)
+  m_maxSpeed(    0.0075),
+  m_lastRender(QDateTime::currentDateTime()),
+  m_currentFPS(0.f),
+  m_fpsSum(0.f),
+  m_fpsCount(0)
 {
   this->initializeFlockers();
   this->initializePredators();
@@ -73,6 +77,14 @@ inline double V_morse_ND(const double r) {
 
 void FlockWidget::takeStep()
 {
+  QDateTime now = QDateTime::currentDateTime();
+  qint64 elapsed_ms = m_lastRender.msecsTo(now);
+  float elapsed_s = elapsed_ms / 1000.f;
+  m_lastRender = now;
+  m_currentFPS = 1.f / elapsed_s;
+  m_fpsSum += m_currentFPS;
+  ++m_fpsCount;
+
   QVector<Eigen::Vector3d> newDirections;
   newDirections.reserve(m_flockers.size());
 
@@ -314,7 +326,8 @@ void FlockWidget::paintEvent(QPaintEvent *)
   }
 
   // Print out number of types
-  for (unsigned int i = 0, y = 10; i < m_numFlockerTypes + 1; ++i) {
+  unsigned int y = 10;
+  for (unsigned int i = 0; i < m_numFlockerTypes + 1; ++i) {
     unsigned int count = counts[i];
     if (i < m_numFlockerTypes)
       p.setPen(this->typeToColor(i));
@@ -323,6 +336,11 @@ void FlockWidget::paintEvent(QPaintEvent *)
     p.drawText(5, y, QString::number(count));
     y += 20;
   }
+
+  p.setPen(Qt::white);
+  p.drawText(5, y, QString("FPS: %1 (%2)")
+             .arg(m_fpsSum / m_fpsCount).arg(m_currentFPS));
+  y += 20;
 }
 
 void FlockWidget::initializeFlockers()
