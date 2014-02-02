@@ -238,8 +238,8 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
             result.deadFlocker = f;
           }
           else {
-            //               normalize          1/r^2        vector
-            predatorForce += rInvNorm * (rInvNorm * rInvNorm) * r;
+            //               normalize     1/r     vector
+            predatorForce += rInvNorm * (rInvNorm) * r;
           }
         }
       }
@@ -247,8 +247,8 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
       else {
         // Cutoff distance for predator
         if (rNorm < 0.15) {
-          //               normalize          1/r^2        vector
-          predatorForce += rInvNorm * (rInvNorm * rInvNorm) * r;
+          //               2    normalize          1/r^2        vector
+          predatorForce += 2. * rInvNorm * (rInvNorm * rInvNorm) * r;
         }
       }
     }

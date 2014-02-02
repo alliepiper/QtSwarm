@@ -19,6 +19,7 @@ private:
   typedef QVector<Qt::BrushStyle> BrushVector;
    BrushVector m_brushes;
    BrushVector::const_iterator m_current;
+   unsigned int m_repeat;
 };
 
 #endif // PREDATOR_H
