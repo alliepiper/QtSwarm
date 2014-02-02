@@ -105,7 +105,7 @@ FlockWidget::FlockWidget(QWidget *parent) :
 
   connect(m_timer, SIGNAL(timeout()), this, SLOT(takeStep()));
 
-  m_timer->start(20);
+  m_timer->start(12);
 }
 
 FlockWidget::~FlockWidget()
