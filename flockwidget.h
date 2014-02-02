@@ -27,6 +27,9 @@ protected slots:
 protected:
   virtual void paintEvent(QPaintEvent *);
   virtual void keyPressEvent(QKeyEvent *);
+  virtual void mouseMoveEvent(QMouseEvent *);
+  virtual void mousePressEvent(QMouseEvent *);
+  virtual void mouseReleaseEvent(QMouseEvent *);
 
   void initializeFlockers();
   void cleanupFlockers();
@@ -68,6 +71,10 @@ protected:
   float m_currentFPS;
   float m_fpsSum;
   float m_fpsCount;
+
+  void setClickPoint(const QPointF &);
+  bool m_clicked;
+  Eigen::Vector3d m_clickPoint;
 };
 
 #endif // FLOCKWIDGET_H

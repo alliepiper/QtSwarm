@@ -6,6 +6,7 @@
 #include <QtGui/QBrush>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QPen>
+#include <QtGui/QMouseEvent>
 #include <QtGui/QPainter>
 
 #include <stdlib.h>
@@ -108,8 +109,9 @@ void FlockWidget::takeStep()
   double diffPotWeight  = 0.25; // morse potential, all type()s
   double samePotWeight  = 0.50; // morse potential, same type()
   double alignWeight    = 0.50; // Align to average neighbor heading
-  double predatorWeight = 1.50; // 1/r^2 attraction/repulsion to all predators
+  double predatorWeight = 1.00; // 1/r^2 attraction/repulsion to all predators
   double targetWeight   = 0.75; // 1/r^2 attraction to all targets
+  double clickWeight    = 2.00; // 1/r^2 attraction to clicked point
   // newDirection = (oldDirection + (factor) * maxTurn * force).normalized()
   const double maxTurn = 0.25;
   // velocity *= 1.0 + speedupFactor * direction.dot(samePotForce)
@@ -126,6 +128,8 @@ void FlockWidget::takeStep()
 
   // Loop through each flocker and predator:
   foreach (Flocker *f_i, m_flockers) {
+    Predator *pred_i = qobject_cast<Predator*>(f_i);
+
     // Reset forces
     samePotForce.setZero();
     diffPotForce.setZero();
@@ -133,15 +137,25 @@ void FlockWidget::takeStep()
     predatorForce.setZero();
     targetForce.setZero();
 
-    // Calculate a distance-weighted average vector towards the relevant
-    // targets
-    foreach (Target *t, m_targets[f_i->type()]) {
-      r = t->pos() - f_i->pos();
-      const double rNorm = r.norm();
-      targetForce += (1.0/(rNorm*rNorm*rNorm)) * r;
-      if (rNorm < 0.025) {
-        deadTargets.push_back(t);
+    if (!m_clicked) {
+      // Calculate a distance-weighted average vector towards the relevant
+      // targets
+      if (!pred_i) {
+        foreach (Target *t, m_targets[f_i->type()]) {
+          r = t->pos() - f_i->pos();
+          const double rNorm = r.norm();
+          targetForce += (1.0/(rNorm*rNorm*rNorm)) * r;
+          if (rNorm < 0.025) {
+            deadTargets.push_back(t);
+          }
+        }
       }
+    }
+    else {
+      // Ignore targets and pull towards clicked point.
+      r = m_clickPoint - f_i->pos();
+      const double rNorm = r.norm();
+      targetForce = (1.0/(rNorm*rNorm*rNorm)) * r;
     }
 
     // Average together V(|r_ij|) * r_ij
@@ -150,14 +164,12 @@ void FlockWidget::takeStep()
       r = f_j->pos() - f_i->pos();
 
       // General cutoff
-      if (r.x() > 0.3 || r.y() > 0.3 || r.z() > 0.3) {
+      if (r.x() > 0.3 || r.y() > 0.3 || r.z() > 0.3)
         continue;
-      }
 
       const double rNorm = r.norm();
       const double rInvNorm = 1.0 / rNorm;
 
-      Predator *pred_i = qobject_cast<Predator*>(f_i);
       Predator *pred_j = qobject_cast<Predator*>(f_j);
       // Both or neither are predators, use morse potential
       if ((!pred_i && !pred_j) ||
@@ -235,13 +247,18 @@ void FlockWidget::takeStep()
       targetForce.normalize();
     }
 
+    // target weight changes when clicked:
+    const double rTargetWeight = !m_clicked ? targetWeight
+                                            : (pred_i ? -clickWeight
+                                                      : clickWeight);
+
     // Scale the force so that it will turn faster when "direction" is not
     // aligned well with force:
     Eigen::Vector3d force (samePotWeight  * samePotForce  +
                            diffPotWeight  * diffPotForce  +
                            alignWeight    * alignForce    +
                            predatorWeight * predatorForce +
-                           targetWeight   * targetForce   );
+                           rTargetWeight  * targetForce   );
     force.normalize();
     // cap dot factor, ensures that *some* finite turning will occur
     double directionDotForce = f_i->direction().dot(force);
@@ -350,6 +367,23 @@ void FlockWidget::keyPressEvent(QKeyEvent *e)
 {
   if (e->key() == Qt::Key_Q)
     exit(0);
+}
+
+void FlockWidget::mouseMoveEvent(QMouseEvent *e)
+{
+  if (m_clicked)
+    setClickPoint(e->posF());
+}
+
+void FlockWidget::mousePressEvent(QMouseEvent *e)
+{
+  m_clicked = true;
+  setClickPoint(e->posF());
+}
+
+void FlockWidget::mouseReleaseEvent(QMouseEvent *)
+{
+  m_clicked = false;
 }
 
 void FlockWidget::initializeFlockers()
@@ -547,4 +581,14 @@ QColor FlockWidget::typeToColor(const unsigned int type)
     qWarning() << "Unrecognized type:" << type;
     return QColor();
   }
+}
+
+void FlockWidget::setClickPoint(const QPointF &point)
+{
+  const QRect rect = this->rect();
+  double width = rect.width();
+  double height = rect.height();
+  m_clickPoint(0) = point.x() / width;
+  m_clickPoint(1) = point.y() / height;
+  m_clickPoint(2) = rand() / static_cast<double>(RAND_MAX);
 }
