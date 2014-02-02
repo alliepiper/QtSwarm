@@ -15,6 +15,9 @@ public:
 public slots:
   virtual void draw(QPainter *p);
   virtual void takeStep();
+
+protected:
+  void drawInternal(QPainter *p, Qt::BrushStyle style);
 };
 
 #endif // FLOCKER_H

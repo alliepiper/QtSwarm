@@ -20,46 +20,7 @@ Flocker::~Flocker()
 
 void Flocker::draw(QPainter *p)
 {
-  const double width = p->device()->width();
-  const double height = p->device()->height();
-
-  // x/y position in device coordinates:
-  double devPos[2];
-  devPos[0] = m_pos.x() * width;
-  devPos[1] = m_pos.y() * height;
-
-  const double depth = m_pos.z();
-
-  double radius = depth * MAXRADIUS;
-  if (radius < MINRADIUS) {
-    radius = MINRADIUS;
-  }
-
-  radius *= 0.5 * (width + height);
-
-  double devDir[2];
-  devDir[0] = m_direction.x() * radius;
-  devDir[1] = m_direction.y() * radius;
-
-  p->setPen(Qt::black);
-  QBrush brush (m_color, Qt::SolidPattern);
-  p->setBrush(brush);
-
-  // Draw as circle
-  //  const double diameter = radius + radius;
-  //  p->drawEllipse(devPos[0], devPos[1], diameter, diameter);
-
-  // Three points defining the triangle
-  QPointF triangle [3];
-  triangle[0].setX(devPos[0] + devDir[0]);
-  triangle[0].setY(devPos[1] + devDir[1]);
-
-  triangle[1].setX(devPos[0] - devDir[0] + 0.5 * devDir[1]);
-  triangle[1].setY(devPos[1] - devDir[1] + 0.5 * devDir[0]);
-
-  triangle[2].setX(devPos[0] - devDir[0] - 0.5 * devDir[1]);
-  triangle[2].setY(devPos[1] - devDir[1] - 0.5 * devDir[0]);
-  p->drawPolygon(triangle, 3);
+  drawInternal(p, Qt::SolidPattern);
 }
 
 void Flocker::takeStep()
@@ -98,4 +59,44 @@ void Flocker::takeStep()
     m_pos.z() = 0.999;
     m_velocity *= bounceSlowdownFactor;
   }
+}
+
+void Flocker::drawInternal(QPainter *p, Qt::BrushStyle style)
+{
+  const double width = p->device()->width();
+  const double height = p->device()->height();
+
+  // x/y position in device coordinates:
+  double devPos[2];
+  devPos[0] = m_pos.x() * width;
+  devPos[1] = m_pos.y() * height;
+
+  const double depth = m_pos.z();
+
+  double radius = depth * MAXRADIUS;
+  if (radius < MINRADIUS) {
+    radius = MINRADIUS;
+  }
+
+  radius *= 0.5 * (width + height);
+
+  double devDir[2];
+  devDir[0] = m_direction.x() * radius;
+  devDir[1] = m_direction.y() * radius;
+
+  p->setPen(Qt::black);
+  QBrush brush (m_color, style);
+  p->setBrush(brush);
+
+  // Three points defining the triangle
+  QPointF triangle [3];
+  triangle[0].setX(devPos[0] + devDir[0]);
+  triangle[0].setY(devPos[1] + devDir[1]);
+
+  triangle[1].setX(devPos[0] - devDir[0] + 0.5 * devDir[1]);
+  triangle[1].setY(devPos[1] - devDir[1] + 0.5 * devDir[0]);
+
+  triangle[2].setX(devPos[0] - devDir[0] - 0.5 * devDir[1]);
+  triangle[2].setY(devPos[1] - devDir[1] - 0.5 * devDir[0]);
+  p->drawPolygon(triangle, 3);
 }
