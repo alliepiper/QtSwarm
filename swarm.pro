@@ -16,4 +16,4 @@ HEADERS += \
     predator.h
 
 INCLUDEPATH += \
-    /usr/include/eigen2/
+    C:/Users/David/Documents/GitHub/install-Eigen3/include/eigen3
