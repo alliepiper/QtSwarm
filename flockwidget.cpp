@@ -4,6 +4,7 @@
 #include <QtCore/QTimer>
 
 #include <QtGui/QBrush>
+#include <QtGui/QKeyEvent>
 #include <QtGui/QPen>
 #include <QtGui/QPainter>
 
@@ -35,6 +36,8 @@ FlockWidget::FlockWidget(QWidget *parent) :
   this->initializeFlockers();
   this->initializePredators();
   this->initializeTargets();
+
+  this->setFocusPolicy(Qt::WheelFocus);
 
   // Initialize RNG
   srand(time(NULL));
@@ -341,6 +344,12 @@ void FlockWidget::paintEvent(QPaintEvent *)
   p.drawText(5, y, QString("FPS: %1 (%2)")
              .arg(m_fpsSum / m_fpsCount).arg(m_currentFPS));
   y += 20;
+}
+
+void FlockWidget::keyPressEvent(QKeyEvent *e)
+{
+  if (e->key() == Qt::Key_Q)
+    exit(0);
 }
 
 void FlockWidget::initializeFlockers()

@@ -26,6 +26,7 @@ protected slots:
 
 protected:
   virtual void paintEvent(QPaintEvent *);
+  virtual void keyPressEvent(QKeyEvent *);
 
   void initializeFlockers();
   void cleanupFlockers();
