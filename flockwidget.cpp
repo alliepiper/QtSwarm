@@ -3,11 +3,14 @@
 #include <QtCore/QDebug>
 #include <QtCore/QTimer>
 
+#include <QtGui/QApplication>
 #include <QtGui/QBrush>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QPen>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QPainter>
+
+#include <QtConcurrentMap>
 
 #include <stdlib.h>
 #include <time.h>
@@ -17,44 +20,7 @@
 #include "predator.h"
 #include "target.h"
 
-FlockWidget::FlockWidget(QWidget *parent) :
-  QWidget(parent),
-  m_timer(new QTimer (this)),
-  m_entityIdHead(0),
-  m_numFlockers(500),
-  m_numFlockerTypes(12),
-  m_numPredators(30),
-  m_numTargetTypes(12),
-  m_numTargetsPerType(3),
-  m_initialSpeed(0.0020),
-  m_minSpeed(    0.0035),
-  m_maxSpeed(    0.0075),
-  m_lastRender(QDateTime::currentDateTime()),
-  m_currentFPS(0.f),
-  m_fpsSum(0.f),
-  m_fpsCount(0)
-{
-  this->initializeFlockers();
-  this->initializePredators();
-  this->initializeTargets();
-
-  this->setFocusPolicy(Qt::WheelFocus);
-
-  // Initialize RNG
-  srand(time(NULL));
-
-  connect(m_timer, SIGNAL(timeout()), this, SLOT(takeStep()));
-
-  m_timer->start(20);
-}
-
-FlockWidget::~FlockWidget()
-{
-  this->cleanupFlockers();
-  this->cleanupPredators();
-  this->cleanupTargets();
-}
-
+namespace {
 // See http://www.musicdsp.org/showone.php?id=222 for more info
 inline float fastexp5(float x) {
     return (120+x*(120+x*(60+x*(20+x*(5+x)))))*0.0083333333f;
@@ -79,8 +45,281 @@ inline double V_morse_ND(const double r) {
   return (v2 - v1) / (delta + delta);
 }
 
+// Weight for each competing force
+static double diffPotWeight  = 0.25; // morse potential, all type()s
+static double samePotWeight  = 0.50; // morse potential, same type()
+static double alignWeight    = 0.50; // Align to average neighbor heading
+static double predatorWeight = 1.00; // 1/r^2 attraction/repulsion to all predators
+static double targetWeight   = 0.75; // 1/r^2 attraction to all targets
+static double clickWeight    = 2.00; // 1/r^2 attraction to clicked point
+// newDirection = (oldDirection + (factor) * maxTurn * force).normalized()
+static const double maxTurn = 0.25;
+// velocity *= 1.0 + speedupFactor * direction.dot(samePotForce)
+static const double speedupFactor = 0.075;
+
+// Normalize force weights:
+static double invWeightSum = 1.0 / (diffPotWeight + samePotWeight + alignWeight +
+                                    predatorWeight + targetWeight);
+
+static void initWorker()
+{
+  static bool inited = false;
+  if (inited) {
+    diffPotWeight  *= invWeightSum;
+    samePotWeight  *= invWeightSum;
+    alignWeight    *= invWeightSum;
+    predatorWeight *= invWeightSum;
+    targetWeight   *= invWeightSum;
+  }
+}
+} // end anon namespace
+
+FlockWidget::FlockWidget(QWidget *parent) :
+  QWidget(parent),
+  m_timer(new QTimer (this)),
+  m_entityIdHead(0),
+  m_numFlockers(500),
+  m_numFlockerTypes(12),
+  m_numPredators(30),
+  m_numTargetTypes(12),
+  m_numTargetsPerType(3),
+  m_initialSpeed(0.0020),
+  m_minSpeed(    0.0035),
+  m_maxSpeed(    0.0075),
+  m_lastRender(QDateTime::currentDateTime()),
+  m_currentFPS(0.f),
+  m_fpsSum(0.f),
+  m_fpsCount(0),
+  m_aborted(false),
+  m_clicked(false)
+{
+  initWorker();
+  this->initializeFlockers();
+  this->initializePredators();
+  this->initializeTargets();
+
+  this->setFocusPolicy(Qt::WheelFocus);
+
+  // Initialize RNG
+  srand(time(NULL));
+
+  connect(m_timer, SIGNAL(timeout()), this, SLOT(takeStep()));
+
+  m_timer->start(20);
+}
+
+FlockWidget::~FlockWidget()
+{
+  this->cleanupFlockers();
+  this->cleanupPredators();
+  this->cleanupTargets();
+}
+
+struct FlockWidget::TakeStepResult
+{
+  Eigen::Vector3d newDirection;
+  double newVelocity;
+  const Target *deadTarget;
+  const Flocker *deadFlocker;
+};
+
+struct FlockWidget::TakeStepFunctor
+{
+  TakeStepFunctor(FlockWidget &w) : widget(w) {}
+  FlockWidget &widget;
+
+  typedef TakeStepResult result_type;
+
+  FlockWidget::TakeStepResult operator()(const Flocker *f)
+  {
+    return widget.takeStepWorker(f);
+  }
+};
+
+bool isNan(double d)
+{
+  return d != d;
+}
+
+FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) const
+{
+  const bool pred_i = f_i->eType() == Entity::PredatorEntity;
+
+  TakeStepResult result;
+  result.deadTarget = NULL;
+  result.deadFlocker = NULL;
+
+  Eigen::Vector3d samePotForce(0., 0., 0.);
+  Eigen::Vector3d diffPotForce(0., 0., 0.);
+  Eigen::Vector3d alignForce(0., 0., 0.);
+  Eigen::Vector3d predatorForce(0., 0., 0.);
+  Eigen::Vector3d targetForce(0., 0., 0.);
+  Eigen::Vector3d r(0., 0., 0.);
+
+  if (!m_clicked) {
+    // Calculate a distance-weighted average vector towards the relevant
+    // targets
+    if (!pred_i) {
+      foreach (const Target *t, m_targets[f_i->type()]) {
+        r = t->pos() - f_i->pos();
+        const double rNorm = r.norm();
+        if (rNorm < 0.025)
+          result.deadTarget = t;
+        else
+          targetForce += (1.0/(rNorm*rNorm*rNorm)) * r;
+      }
+    }
+  }
+  else {
+    // Ignore targets and pull towards clicked point.
+    r = m_clickPoint - f_i->pos();
+    const double rNorm = r.norm();
+    if (rNorm > 0.01)
+      targetForce = (1.0/(rNorm*rNorm*rNorm)) * r;
+  }
+
+  // Average together V(|r_ij|) * r_ij
+  foreach (const Flocker *f_j, m_flockers) {
+    if (f_i == f_j) continue;
+    r = f_j->pos() - f_i->pos();
+
+    // General cutoff
+    if (r.x() > 0.3 || r.y() > 0.3 || r.z() > 0.3)
+      continue;
+
+    const double rNorm = r.norm();
+    const double rInvNorm = rNorm > 0.01 ? 1.0 / rNorm : 1.0;
+
+    const bool pred_j = f_j->eType() == Entity::PredatorEntity;
+
+    // Both or neither are predators, use morse potential
+    if ((!pred_i && !pred_j) ||
+        ( pred_i &&  pred_j) ){
+      double V = std::numeric_limits<double>::max();
+
+      // Apply cutoff for morse interaction
+      if (rNorm < 0.10) {
+        V = V_morse_ND(rNorm);
+        diffPotForce += (V*rInvNorm*rInvNorm) * r;
+      }
+
+      // Alignment -- steer towards the heading of nearby flockers
+      if (f_i->type() == f_j->type() &&
+          rNorm < 0.20 && rNorm > 0.001) {
+        if (V == std::numeric_limits<double>::max()) {
+          V = V_morse_ND(rNorm);
+        }
+        samePotForce += (V *rInvNorm*rInvNorm) * r;
+        alignForce += rInvNorm * f_j->direction();
+      }
+    }
+    // One is a predator, one is not. Evade / Pursue
+    else {
+      const Flocker *p;
+      const Flocker *f;
+      if (pred_i) {
+        p = f_i;
+        f = f_j;
+      }
+      else {
+        p = f_j;
+        f = f_i;
+      }
+
+      // Calculate distance between them
+      r = f->pos() - p->pos();
+      const double rNorm = r.norm();
+      const double rInvNorm = rNorm > 0.01 ? 1.0 / rNorm : 1.0;
+      // The flocker is being updated
+      if (pred_j) {
+        if (rNorm < 0.3) {
+          // Did the predator catch the flocker?
+          if (rNorm < 0.025) {
+            result.deadFlocker = f;
+          }
+          else {
+            //               normalize          1/r^2        vector
+            predatorForce += rInvNorm * (rInvNorm * rInvNorm) * r;
+          }
+        }
+      }
+      // The predator is being updated
+      else {
+        // Cutoff distance for predator
+        if (rNorm < 0.15) {
+          //               normalize          1/r^2        vector
+          predatorForce += rInvNorm * (rInvNorm * rInvNorm) * r;
+        }
+      }
+    }
+  }
+
+  if (!diffPotForce.isZero(0.1)) {
+    diffPotForce.normalize();
+  }
+  if (!samePotForce.isZero(0.1)) {
+    samePotForce.normalize();
+  }
+  if (!alignForce.isZero(0.1)) {
+    alignForce.normalize();
+  }
+  if (!predatorForce.isZero(0.1)) {
+    predatorForce.normalize();
+  }
+  if (!targetForce.isZero(0.1)) {
+    targetForce.normalize();
+  }
+
+  // target weight changes when clicked:
+  const double rTargetWeight = m_clicked ? (pred_i ? -clickWeight
+                                                   : clickWeight)
+                                         : targetWeight;
+
+  // Scale the force so that it will turn faster when "direction" is not
+  // aligned well with force:
+  Eigen::Vector3d force (samePotWeight  * samePotForce  +
+                         diffPotWeight  * diffPotForce  +
+                         alignWeight    * alignForce    +
+                         predatorWeight * predatorForce +
+                         rTargetWeight  * targetForce   );
+  if (!force.isZero(0.1))
+    force.normalize();
+
+  // cap dot factor, ensures that *some* finite turning will occur
+  double directionDotForce = f_i->direction().dot(force);
+  if (directionDotForce > 0.85) {
+    directionDotForce = 0.85;
+  }
+  const double scale ( (1 - 0.5 * (directionDotForce + 1)) *
+                       maxTurn);
+
+  // Accelerate towards goal
+  const double directionDotPotForce = f_i->direction().dot(samePotForce);
+  result.newVelocity = f_i->velocity() *
+      (1.0 + speedupFactor * directionDotPotForce);
+  if (result.newVelocity < m_minSpeed)
+    result.newVelocity = m_minSpeed;
+  else if (result.newVelocity > m_maxSpeed)
+    result.newVelocity = m_maxSpeed;
+
+  // Keep new direction
+  result.newDirection = (f_i->direction() + scale * force).normalized();
+
+  return result;
+}
+
+namespace {
+struct EntityStepFunctor
+{
+  void operator()(Entity *e) const { e->takeStep(); }
+};
+}
+
 void FlockWidget::takeStep()
 {
+  if (m_aborted)
+    qApp->exit();
+
   QDateTime now = QDateTime::currentDateTime();
   qint64 elapsed_ms = m_lastRender.msecsTo(now);
   float elapsed_s = elapsed_ms / 1000.f;
@@ -89,220 +328,40 @@ void FlockWidget::takeStep()
   m_fpsSum += m_currentFPS;
   ++m_fpsCount;
 
-  QVector<Eigen::Vector3d> newDirections;
-  newDirections.reserve(m_flockers.size());
+  // Loop through each flocker and predator:
+  QFuture<FlockWidget::TakeStepResult> future =
+      QtConcurrent::mapped(m_flockers, TakeStepFunctor(*this));
 
-  // These flockers need to be removed:
+  // Render while waiting on future...
+  this->update();
+  qApp->processEvents();
+
   QVector<Flocker*> deadFlockers;
-
-  // These targets have been eaten:
   QVector<Target*> deadTargets;
 
-  // Allocate loop variables
-  Eigen::Vector3d samePotForce;
-  Eigen::Vector3d diffPotForce;
-  Eigen::Vector3d alignForce;
-  Eigen::Vector3d predatorForce;
-  Eigen::Vector3d targetForce;
-  Eigen::Vector3d r;
-  // Weight for each competing force
-  double diffPotWeight  = 0.25; // morse potential, all type()s
-  double samePotWeight  = 0.50; // morse potential, same type()
-  double alignWeight    = 0.50; // Align to average neighbor heading
-  double predatorWeight = 1.00; // 1/r^2 attraction/repulsion to all predators
-  double targetWeight   = 0.75; // 1/r^2 attraction to all targets
-  double clickWeight    = 2.00; // 1/r^2 attraction to clicked point
-  // newDirection = (oldDirection + (factor) * maxTurn * force).normalized()
-  const double maxTurn = 0.25;
-  // velocity *= 1.0 + speedupFactor * direction.dot(samePotForce)
-  const double speedupFactor = 0.075;
-
-  // Normalize force weights:
-  double invWeightSum = 1.0 / (diffPotWeight + samePotWeight + alignWeight +
-                               predatorWeight + targetWeight);
-  diffPotWeight  *= invWeightSum;
-  samePotWeight  *= invWeightSum;
-  alignWeight    *= invWeightSum;
-  predatorWeight *= invWeightSum;
-  targetWeight   *= invWeightSum;
-
-  // Loop through each flocker and predator:
-  foreach (Flocker *f_i, m_flockers) {
-    Predator *pred_i = qobject_cast<Predator*>(f_i);
-
-    // Reset forces
-    samePotForce.setZero();
-    diffPotForce.setZero();
-    alignForce.setZero();
-    predatorForce.setZero();
-    targetForce.setZero();
-
-    if (!m_clicked) {
-      // Calculate a distance-weighted average vector towards the relevant
-      // targets
-      if (!pred_i) {
-        foreach (Target *t, m_targets[f_i->type()]) {
-          r = t->pos() - f_i->pos();
-          const double rNorm = r.norm();
-          targetForce += (1.0/(rNorm*rNorm*rNorm)) * r;
-          if (rNorm < 0.025) {
-            deadTargets.push_back(t);
-          }
-        }
-      }
-    }
-    else {
-      // Ignore targets and pull towards clicked point.
-      r = m_clickPoint - f_i->pos();
-      const double rNorm = r.norm();
-      targetForce = (1.0/(rNorm*rNorm*rNorm)) * r;
-    }
-
-    // Average together V(|r_ij|) * r_ij
-    foreach (Flocker *f_j, m_flockers) {
-      if (f_i == f_j) continue;
-      r = f_j->pos() - f_i->pos();
-
-      // General cutoff
-      if (r.x() > 0.3 || r.y() > 0.3 || r.z() > 0.3)
-        continue;
-
-      const double rNorm = r.norm();
-      const double rInvNorm = 1.0 / rNorm;
-
-      Predator *pred_j = qobject_cast<Predator*>(f_j);
-      // Both or neither are predators, use morse potential
-      if ((!pred_i && !pred_j) ||
-          ( pred_i &&  pred_j) ){
-        double V = std::numeric_limits<double>::max();
-
-        // Apply cutoff for morse interaction
-        if (rNorm < 0.10) {
-          V = V_morse_ND(rNorm);
-          diffPotForce += (V*rInvNorm*rInvNorm) * r;
-        }
-
-        // Alignment -- steer towards the heading of nearby flockers
-        if (f_i->type() == f_j->type() &&
-            rNorm < 0.20 && rNorm > 0.001) {
-          if (V == std::numeric_limits<double>::max()) {
-            V = V_morse_ND(rNorm);
-          }
-          samePotForce += (V *rInvNorm*rInvNorm) * r;
-          alignForce += rInvNorm * f_j->direction();
-        }
-      }
-      // One is a predator, one is not. Evade / Pursue
-      else {
-        Predator *p;
-        Flocker *f;
-        if (pred_i) {
-          p = pred_i;
-          f = f_j;
-        }
-        else {
-          p = pred_j;
-          f = f_i;
-        }
-
-        // Calculate distance between them
-        r = f->pos() - p->pos();
-        const double rNorm = r.norm();
-        const double rInvNorm = 1.0 / rNorm;
-        // The flocker is being updated
-        if (f == f_i) {
-          if (rNorm < 0.3) {
-            // Did the predator catch the flocker?
-            if (rNorm < 0.025) {
-              deadFlockers.append(f);
-            }
-            //               normalize          1/r^2        vector
-            predatorForce += rInvNorm * (rInvNorm * rInvNorm) * r;
-          }
-        }
-        // The predator is being updated
-        else {
-          // Cutoff distance for predator
-          if (rNorm < 0.15) {
-            //               normalize          1/r^2        vector
-            predatorForce += rInvNorm * (rInvNorm * rInvNorm) * r;
-          }
-        }
-      }
-    }
-
-    if (!diffPotForce.isZero(0.1)) {
-      diffPotForce.normalize();
-    }
-    if (!samePotForce.isZero(0.1)) {
-      samePotForce.normalize();
-    }
-    if (!alignForce.isZero(0.1)) {
-      alignForce.normalize();
-    }
-    if (!predatorForce.isZero(0.1)) {
-      predatorForce.normalize();
-    }
-    if (!targetForce.isZero(0.1)) {
-      targetForce.normalize();
-    }
-
-    // target weight changes when clicked:
-    const double rTargetWeight = !m_clicked ? targetWeight
-                                            : (pred_i ? -clickWeight
-                                                      : clickWeight);
-
-    // Scale the force so that it will turn faster when "direction" is not
-    // aligned well with force:
-    Eigen::Vector3d force (samePotWeight  * samePotForce  +
-                           diffPotWeight  * diffPotForce  +
-                           alignWeight    * alignForce    +
-                           predatorWeight * predatorForce +
-                           rTargetWeight  * targetForce   );
-    force.normalize();
-    // cap dot factor, ensures that *some* finite turning will occur
-    double directionDotForce = f_i->direction().dot(force);
-    if (directionDotForce > 0.85) {
-      directionDotForce = 0.85;
-    }
-    const double scale ( (1 - 0.5 * (directionDotForce + 1)) *
-                         maxTurn);
-
-    // Accelerate towards goal
-    const double directionDotPotForce = f_i->direction().dot(samePotForce);
-    f_i->velocity() *= 1.0 + speedupFactor * directionDotPotForce;
-    if (f_i->velocity() < m_minSpeed) f_i->velocity() = m_minSpeed;
-    else if (f_i->velocity() > m_maxSpeed) f_i->velocity() = m_maxSpeed;
-
-    // Keep new direction
-    newDirections.append((f_i->direction() + scale * force).normalized());
+  future.waitForFinished();
+  QLinkedList<Flocker*>::iterator current = m_flockers.begin();
+  foreach (const TakeStepResult &result, future.results()) {
+    (*current)->direction() = result.newDirection;
+    (*current)->velocity() = result.newVelocity;
+    if (result.deadFlocker)
+      deadFlockers.push_back(const_cast<Flocker*>(result.deadFlocker));
+    if (result.deadTarget)
+      deadTargets.push_back(const_cast<Target*>(result.deadTarget));
+    ++current;
   }
 
-  // Update flocker directions:
-  int ind = 0;
-  foreach (Flocker *f, m_flockers) {
-    f->direction() = newDirections[ind++];
-  }
-
-  // Take steps
-  foreach (Entity *e, m_entities) {
-    e->takeStep();
-  }
-
-  // Replace dead flockers
-  foreach (Flocker *f, deadFlockers) {
-//    this->addRandomFlocker(f->type());
-//    this->addRandomFlocker();
+  foreach (Flocker *f, deadFlockers)
     this->removeFlocker(f);
-  }
 
-  // Randomize dead targets
   foreach (Target *t, deadTargets) {
     this->addFlockerFromEntity(t);
     this->randomizeTarget(t);
   }
 
-  this->update();
+  QFuture<void> stepFuture = QtConcurrent::map(m_entities, EntityStepFunctor());
+  qApp->processEvents();
+  stepFuture.waitForFinished();
 }
 
 void FlockWidget::paintEvent(QPaintEvent *)
@@ -365,8 +424,12 @@ void FlockWidget::paintEvent(QPaintEvent *)
 
 void FlockWidget::keyPressEvent(QKeyEvent *e)
 {
-  if (e->key() == Qt::Key_Q)
-    exit(0);
+  if (e->key() == Qt::Key_Q) {
+    m_aborted = true;
+    return;
+  }
+
+  QWidget::keyPressEvent(e);
 }
 
 void FlockWidget::mouseMoveEvent(QMouseEvent *e)

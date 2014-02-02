@@ -3,7 +3,7 @@
 #include <QtGui/QPainter>
 
 Target::Target(unsigned int id, unsigned int type, QObject *parent) :
-  Entity(id, type, parent)
+  Entity(id, type, TargetEntity, parent)
 {
 }
 

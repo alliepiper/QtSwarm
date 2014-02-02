@@ -72,9 +72,17 @@ protected:
   float m_fpsSum;
   float m_fpsCount;
 
+  bool m_aborted;
+
   void setClickPoint(const QPointF &);
   bool m_clicked;
   Eigen::Vector3d m_clickPoint;
+
+  struct TakeStepFunctor;
+  friend struct TakeStepFunctor;
+  struct TakeStepResult;
+  TakeStepResult takeStepWorker(const Flocker *f_i) const;
+
 };
 
 #endif // FLOCKWIDGET_H

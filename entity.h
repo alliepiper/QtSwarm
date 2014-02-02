@@ -13,11 +13,20 @@ class Entity : public QObject
 {
   Q_OBJECT
 public:
-  explicit Entity(unsigned int it, unsigned int type, QObject *parent = 0);
+  enum EntityType {
+    Invalid = 0,
+    FlockerEntity,
+    PredatorEntity,
+    TargetEntity
+  };
+
+  explicit Entity(unsigned int id, unsigned int type, EntityType eType,
+                  QObject *parent);
   virtual ~Entity();
 
   unsigned int id() const {return m_id;}
   unsigned int type() const {return m_type;}
+  EntityType eType() const {return m_eType;}
 
   Eigen::Vector3d & pos() {return m_pos;}
   Eigen::Vector3d & direction() {return m_direction;}
@@ -36,6 +45,7 @@ public slots:
 protected:
   unsigned int m_id;
   unsigned int m_type;
+  EntityType m_eType;
   Eigen::Vector3d m_pos;
   Eigen::Vector3d m_direction;
   double m_velocity;
