@@ -17,7 +17,8 @@ public:
     Invalid = 0,
     FlockerEntity,
     PredatorEntity,
-    TargetEntity
+    TargetEntity,
+    BlastEntity,
   };
 
   explicit Entity(unsigned int id, unsigned int type, EntityType eType,

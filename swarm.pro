@@ -5,7 +5,8 @@ SOURCES += \
     target.cpp \
     entity.cpp \
     distancecache.cpp \
-    predator.cpp
+    predator.cpp \
+    blast.cpp
 
 HEADERS += \
     flocker.h \
@@ -13,7 +14,8 @@ HEADERS += \
     target.h \
     entity.h \
     distancecache.h \
-    predator.h
+    predator.h \
+    blast.h
 
 INCLUDEPATH += \
     C:/Users/David/Documents/GitHub/install-Eigen3/include/eigen3

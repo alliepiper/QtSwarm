@@ -8,6 +8,7 @@
 
 #include <Eigen/Core>
 
+class Blast;
 class Entity;
 class Flocker;
 class Predator;
@@ -48,6 +49,9 @@ protected:
   void removeTarget(Target *t);
   void randomizeTarget(Target *t);
 
+  void addBlastFromEntity(const Entity *e);
+  void removeBlast(Blast *b);
+
   // 0->1
   void randomizeVector(Eigen::Vector3d *vec);
   QColor typeToColor(const unsigned int type);
@@ -57,6 +61,7 @@ protected:
   QLinkedList<Flocker*> m_flockers;
   QVector<QLinkedList<Target*> > m_targets;
   QLinkedList<Predator*> m_predators;
+  QLinkedList<Blast*> m_blasts;
   unsigned int m_entityIdHead;
   unsigned int m_numFlockers;
   unsigned int m_numFlockerTypes;

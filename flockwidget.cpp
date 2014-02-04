@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include "blast.h"
 #include "flockwidget.h"
 #include "flocker.h"
 #include "predator.h"
@@ -370,8 +371,20 @@ void FlockWidget::takeStep()
     ++current;
   }
 
-  foreach (Flocker *f, deadFlockers)
+  QVector<Blast*> deadBlasts;
+  deadBlasts.reserve(m_blasts.size());
+  foreach (Blast *b, m_blasts) {
+    if (b->done())
+      deadBlasts.push_back(b);
+  }
+
+  foreach (Blast *b, deadBlasts)
+    removeBlast(b);
+
+  foreach (Flocker *f, deadFlockers) {
+    this->addBlastFromEntity(f);
     this->removeFlocker(f);
+  }
 
   foreach (Target *t, deadTargets) {
     this->addFlockerFromEntity(t);
@@ -426,8 +439,18 @@ void FlockWidget::paintEvent(QPaintEvent *)
   // FPS
   unsigned int y = 10;
   p.setPen(Qt::white);
-  p.drawText(5, y, QString("FPS: %1 (%2)")
-             .arg(m_fpsSum / m_fpsCount).arg(m_currentFPS));
+  p.drawText(5, y, QString("FPS: %1 (current = %2)")
+             .arg(m_fpsSum / m_fpsCount)
+             .arg(m_currentFPS));
+  y += 20;
+
+  p.drawText(5, y, QString("Entities: %1 (%2 flockers, %3 blasts, "
+                           "%4 targets, %5 predators)")
+             .arg(m_entities.size())
+             .arg(m_flockers.size())
+             .arg(m_blasts.size())
+             .arg(m_numFlockerTypes * m_numTargetsPerFlockerType)
+             .arg(m_predators.size()));
   y += 20;
 
   // Print out number of types
@@ -622,6 +645,25 @@ void FlockWidget::removeTarget(Target *t)
 void FlockWidget::randomizeTarget(Target *t)
 {
   this->randomizeVector(&t->pos());
+}
+
+void FlockWidget::addBlastFromEntity(const Entity *e)
+{
+  Blast *newBlast = new Blast (m_entityIdHead++, e->type());
+  newBlast->pos() = e->pos();
+  newBlast->direction() = e->direction();
+  newBlast->velocity() = e->velocity();
+  newBlast->color() = e->color();
+
+  m_blasts.push_back(newBlast);
+  m_entities.push_back(newBlast);
+}
+
+void FlockWidget::removeBlast(Blast *b)
+{
+  m_blasts.removeOne(b);
+  m_entities.removeOne(b);
+  b->deleteLater();
 }
 
 void FlockWidget::randomizeVector(Eigen::Vector3d *vec)
