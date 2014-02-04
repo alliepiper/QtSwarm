@@ -67,8 +67,7 @@ protected:
   unsigned int m_numFlockerTypes;
   unsigned int m_numPredators;
   unsigned int m_numPredatorTypes;
-  unsigned int m_numTargetTypes;
-  unsigned int m_numTargetsPerType;
+  unsigned int m_numTargetsPerFlockerType;
   double m_initialSpeed;
   double m_minSpeed;
   double m_maxSpeed;

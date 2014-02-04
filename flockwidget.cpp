@@ -48,19 +48,28 @@ inline double V_morse_ND(const double r) {
 
 // Weight for each competing force
 static double diffPotWeight  = 0.10; // morse potential, all type()s
-static double samePotWeight  = 0.70; // morse potential, same type()
-static double alignWeight    = 0.70; // Align to average neighbor heading
+static double samePotWeight  = 0.20; // morse potential, same type()
+static double alignWeight    = 0.40; // Align to average neighbor heading
 static double predatorWeight = 1.20; // 1/r^2 attraction/repulsion to all predators
-static double targetWeight   = 0.85; // 1/r^2 attraction to all targets
+static double targetWeight   = 1.20; // 1/r^2 attraction to all targets
 static double clickWeight    = 2.00; // 1/r^2 attraction to clicked point
+static double boundaryWeight = 1.10; // boundary evasion
 // newDirection = (oldDirection + (factor) * maxTurn * force).normalized()
-static const double maxTurn = 0.25;
+static const double maxTurn = 0.20;
 // velocity *= 1.0 + speedupFactor * direction.dot(goalForce)
 static const double speedupFactor = 0.075;
+// Kill radius for if predators catch flockers:
+static const double killRadius = 0.020;
+// Fraction from boundary to begin repulsion
+// rmax in force = ((rmax - r) / rmax) * norm (m @ 0, 0 @ rmax
+static const double boundaryRMax  = 0.25;
+static const double boundaryRMax2 = boundaryRMax * boundaryRMax;
+
+// (rmax - r) / rmax
 
 // Normalize force weights:
 static double invWeightSum = 1.0 / (diffPotWeight + samePotWeight + alignWeight +
-                                    predatorWeight + targetWeight);
+                                    predatorWeight + targetWeight + boundaryWeight);
 
 static void initWorker()
 {
@@ -71,6 +80,7 @@ static void initWorker()
     alignWeight    *= invWeightSum;
     predatorWeight *= invWeightSum;
     targetWeight   *= invWeightSum;
+    boundaryWeight *= invWeightSum;
   }
 }
 } // end anon namespace
@@ -81,10 +91,9 @@ FlockWidget::FlockWidget(QWidget *parent) :
   m_entityIdHead(0),
   m_numFlockers(500),
   m_numFlockerTypes(12),
-  m_numPredators(20),
-  m_numPredatorTypes(2),
-  m_numTargetTypes(12),
-  m_numTargetsPerType(8),
+  m_numPredators(30),
+  m_numPredatorTypes(3),
+  m_numTargetsPerFlockerType(3),
   m_initialSpeed(0.0050),
   m_minSpeed(    0.0015),
   m_maxSpeed(    0.0075),
@@ -156,6 +165,7 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
   Eigen::Vector3d alignForce(0., 0., 0.);
   Eigen::Vector3d predatorForce(0., 0., 0.);
   Eigen::Vector3d targetForce(0., 0., 0.);
+  Eigen::Vector3d boundaryForce(0., 0., 0.);
   Eigen::Vector3d r(0., 0., 0.);
 
   if (!m_clicked) {
@@ -249,7 +259,7 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
         // The flocker is being updated
         if (rNorm < 0.3) {
           // Did the predator catch the flocker?
-          if (rNorm < 0.025) {
+          if (rNorm < killRadius) {
             result.deadFlocker = f;
           }
           else {
@@ -273,6 +283,24 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
     }
   }
 
+  // Repel boundaries
+  const double minBound = boundaryRMax;
+  const double maxBound = 1.0 - boundaryRMax;
+  const Eigen::Vector3d basis[3] = { Eigen::Vector3d(1, 0, 0),
+                                     Eigen::Vector3d(0, 1, 0),
+                                     Eigen::Vector3d(0, 0, 1) };
+
+  for (size_t i = 0; i < 3; ++i) {
+    if (f_i->pos()[i] < minBound) {
+      const double r2 = f_i->pos()[i] * f_i->pos()[i];
+      boundaryForce += ((boundaryRMax2 - r2) / boundaryRMax2) * basis[i];
+    }
+    if (f_i->pos()[i] > maxBound) {
+      const double r2 = (1.0 - f_i->pos()[i]) * (1.0 - f_i->pos()[i]);
+      boundaryForce -= ((boundaryRMax2 - r2) / boundaryRMax2) * basis[i];
+    }
+  }
+
   if (!diffPotForce.isZero(0.1)) {
     diffPotForce.normalize();
   }
@@ -288,6 +316,7 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
   if (!targetForce.isZero(0.1)) {
     targetForce.normalize();
   }
+  // Don't normalize boundary force -- it's kept reasonable.
 
   // target weight changes when clicked:
   const double rTargetWeight = m_clicked ? (pred_i ? -clickWeight
@@ -300,17 +329,20 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
                          diffPotWeight  * diffPotForce  +
                          alignWeight    * alignForce    +
                          predatorWeight * predatorForce +
-                         rTargetWeight  * targetForce   );
-  if (!force.isZero(0.1))
+                         rTargetWeight  * targetForce   +
+                         boundaryWeight * boundaryForce );
+  if (!force.isZero(0.1)) {
     force.normalize();
-
-  // cap dot factor, ensures that *some* finite turning will occur
-  double directionDotForce = f_i->direction().dot(force);
-  if (directionDotForce > 0.85) {
-    directionDotForce = 0.85;
+    // Calculate the rejection of force onto direction:
+    force -= force.dot(f_i->direction()) * f_i->direction();
   }
-  const double scale ( (1 - 0.5 * (directionDotForce + 1)) *
-                       maxTurn);
+
+  const double directionDotForce = f_i->direction().dot(force);
+  const double scale ((1.0 - 0.5 * (directionDotForce + 1.0)) * maxTurn);
+  result.newDirection = (f_i->direction() + scale * force).normalized();
+
+  //dDF  :    -1     -0.5       0       0.5       1
+  //scale:     0.25  ~0.19      0.125  ~0.06      0
 
   // Accelerate towards goal
   const double goalForce = f_i->direction().dot(0.15 * predatorForce +
@@ -321,9 +353,6 @@ FlockWidget::TakeStepResult FlockWidget::takeStepWorker(const Flocker *f_i) cons
     result.newVelocity = m_minSpeed;
   else if (result.newVelocity > m_maxSpeed)
     result.newVelocity = m_maxSpeed;
-
-  // Keep new direction
-  result.newDirection = (f_i->direction() + scale * force).normalized();
 
   return result;
 }
@@ -601,8 +630,8 @@ void FlockWidget::initializeTargets()
 {
   this->cleanupTargets();
 
-  for (unsigned int type = 0; type < m_numTargetTypes; ++type) {
-    for (unsigned int i = 0; i < m_numTargetsPerType; ++i) {
+  for (unsigned int type = 0; type < m_numFlockerTypes; ++type) {
+    for (unsigned int i = 0; i < m_numTargetsPerFlockerType; ++i) {
       this->addRandomTarget(type);
     }
   }

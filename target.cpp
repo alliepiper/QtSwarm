@@ -38,7 +38,7 @@ void Target::takeStep()
 
   // Use a reduced boundary for these -- keeps the flockers from bouncing off
   // of the walls as much
-  const double validFraction = 0.6;
+  const double validFraction = 0.90;
 
   const double minVal = (1.0 - validFraction) / 2.0;
   const double maxVal = 1.0 - minVal;
