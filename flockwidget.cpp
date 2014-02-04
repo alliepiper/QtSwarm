@@ -102,6 +102,7 @@ FlockWidget::FlockWidget(QWidget *parent) :
   m_fpsSum(0.f),
   m_fpsCount(0),
   m_aborted(false),
+  m_showBlasts(false),
   m_clicked(false)
 {
   initWorker();
@@ -411,8 +412,9 @@ void FlockWidget::takeStep()
     removeBlast(b);
 
   foreach (Flocker *f, deadFlockers) {
-    this->addBlastFromEntity(f);
     this->removeFlocker(f);
+    if (!m_showBlasts)
+      this->addBlastFromEntity(f);
   }
 
   foreach (Target *t, deadTargets) {
@@ -500,6 +502,12 @@ void FlockWidget::keyPressEvent(QKeyEvent *e)
   if (e->key() == Qt::Key_Q) {
     m_aborted = true;
     return;
+  }
+  else if (e->key() == Qt::Key_B) {
+    if (m_showBlasts)
+      disableBlasts();
+    else
+      enableBlasts();
   }
 
   QWidget::keyPressEvent(e);
@@ -674,6 +682,16 @@ void FlockWidget::removeTarget(Target *t)
 void FlockWidget::randomizeTarget(Target *t)
 {
   this->randomizeVector(&t->pos());
+}
+
+void FlockWidget::enableBlasts()
+{
+  m_showBlasts = true;
+}
+
+void FlockWidget::disableBlasts()
+{
+  m_showBlasts = false;
 }
 
 void FlockWidget::addBlastFromEntity(const Entity *e)

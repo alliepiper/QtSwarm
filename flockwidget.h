@@ -49,6 +49,8 @@ protected:
   void removeTarget(Target *t);
   void randomizeTarget(Target *t);
 
+  void enableBlasts();
+  void disableBlasts();
   void addBlastFromEntity(const Entity *e);
   void removeBlast(Blast *b);
 
@@ -78,6 +80,7 @@ protected:
   float m_fpsCount;
 
   bool m_aborted;
+  bool m_showBlasts;
 
   void setClickPoint(const QPointF &);
   bool m_clicked;

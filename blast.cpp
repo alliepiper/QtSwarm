@@ -3,8 +3,8 @@
 #include <QtGui/QPainter>
 
 namespace {
-const unsigned int maxRepeat = 3;
-const unsigned int lifetime  = 50;
+const unsigned int maxRepeat = 1;
+const unsigned int lifetime  = 30;
 }
 
 Blast::Blast(unsigned int id, unsigned int type, QObject *parent) :
@@ -32,7 +32,7 @@ void Blast::draw(QPainter *p)
   radius *= 0.5 * (width + height);
 
   QColor color(m_color);
-  color.setAlpha(128 - (126 * m_time) / (lifetime + 1));
+  color.setAlpha(std::max(0, int(128 - (126 * m_time) / (lifetime))));
   p->setPen(color);
   p->setBrush(Qt::NoBrush);
 
@@ -47,6 +47,7 @@ void Blast::takeStep()
     if (m_repeat++ > maxRepeat) {
       m_repeat = 0;
       if (m_time++ > lifetime) {
+        m_time = lifetime;
         m_done = true;
       }
     }
