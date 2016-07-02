@@ -3,14 +3,15 @@
 #include <QtCore/QDebug>
 #include <QtCore/QTimer>
 
-#include <QtGui/QApplication>
+#include <QtWidgets/QApplication>
+
 #include <QtGui/QBrush>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QPen>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QPainter>
 
-#include <QtConcurrentMap>
+#include <QtConcurrent/QtConcurrentMap>
 
 #include <stdlib.h>
 #include <time.h>
@@ -516,13 +517,13 @@ void FlockWidget::keyPressEvent(QKeyEvent *e)
 void FlockWidget::mouseMoveEvent(QMouseEvent *e)
 {
   if (m_clicked)
-    setClickPoint(e->posF());
+    setClickPoint(e->localPos());
 }
 
 void FlockWidget::mousePressEvent(QMouseEvent *e)
 {
   m_clicked = true;
-  setClickPoint(e->posF());
+  setClickPoint(e->localPos());
 }
 
 void FlockWidget::mouseReleaseEvent(QMouseEvent *)

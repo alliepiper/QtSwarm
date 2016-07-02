@@ -4,7 +4,7 @@
 #include <QtCore/QLinkedList>
 #include <QtCore/QDateTime>
 
-#include <QtGui/QWidget>
+#include <QtWidgets/QWidget>
 
 #include <Eigen/Core>
 

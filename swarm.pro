@@ -17,5 +17,10 @@ HEADERS += \
     predator.h \
     blast.h
 
+QT += \
+    widgets \
+    concurrent
+
+# Change these as needed...
 INCLUDEPATH += \
-    C:/Users/David/Documents/GitHub/install-Eigen3/include/eigen3
+    C:/Users/lonie/src/eigen/

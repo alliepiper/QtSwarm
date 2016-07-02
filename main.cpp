@@ -1,7 +1,8 @@
-#include <QtGui/QApplication>
-#include <QtGui/QMainWindow>
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QMainWindow>
+#include <QtWidgets/QWidget>
+
 #include <QtGui/QPainter>
-#include <QtGui/QWidget>
 
 #include <QtCore/QDebug>
 
