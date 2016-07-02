@@ -48,29 +48,38 @@ void Target::takeStep(double t)
   const double minVal = (1.0 - validFraction) / 2.0;
   const double maxVal = 1.0 - minVal;
 
+  // lower values reduce bounce angle (hugs wall)
+  const double factor = 0.1;
+
   // Bounce at boundaries
   if (m_pos.x() < minVal) {
-    m_direction.x() =  fabs(m_direction.x());
+    m_direction.x() = factor * fabs(m_direction.x());
+    m_direction.normalize();
     m_pos.x() = minVal;
   }
   else if (m_pos.x() > maxVal) {
-    m_direction.x() = -fabs(m_direction.x());
+    m_direction.x() = factor * -fabs(m_direction.x());
+    m_direction.normalize();
     m_pos.x() = maxVal;
   }
   if (m_pos.y() < minVal) {
-    m_direction.y() =  fabs(m_direction.y());
+    m_direction.y() = factor * fabs(m_direction.y());
+    m_direction.normalize();
     m_pos.y() = minVal;
   }
   else if (m_pos.y() > maxVal) {
-    m_direction.y() = -fabs(m_direction.y());
+    m_direction.y() = factor * -fabs(m_direction.y());
+    m_direction.normalize();
     m_pos.y() = maxVal;
   }
   if (m_pos.z() < minVal) {
-    m_direction.z() =  fabs(m_direction.z());
+    m_direction.z() = factor * fabs(m_direction.z());
+    m_direction.normalize();
     m_pos.z() = minVal;
   }
   else if (m_pos.z() > maxVal) {
-    m_direction.z() = -fabs(m_direction.z());
+    m_direction.z() = factor * -fabs(m_direction.z());
+    m_direction.normalize();
     m_pos.z() = maxVal;
   }
 }
