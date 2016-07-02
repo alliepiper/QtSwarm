@@ -82,8 +82,8 @@ void FlockWidget::paintEvent(QPaintEvent *)
   QLinkedList<Entity*> sortedEntities;
   foreach (Entity *e, m_engine->entities()) {
     Flocker *f = qobject_cast<Flocker*>(e);
-    Predator *p = qobject_cast<Predator*>(e);
-    if (p) {
+    Predator *pred = qobject_cast<Predator*>(e);
+    if (pred) {
       ++counts[m_engine->numFlockerTypes()];
     }
     else if (f) {
