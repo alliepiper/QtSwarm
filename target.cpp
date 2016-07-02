@@ -2,6 +2,8 @@
 
 #include <QtGui/QPainter>
 
+bool Target::m_visible = false;
+
 Target::Target(unsigned int id, unsigned int type, QObject *parent) :
   Entity(id, type, TargetEntity, parent)
 {
@@ -13,7 +15,10 @@ Target::~Target()
 
 void Target::draw(QPainter *p)
 {
-  return;
+  if (!Target::m_visible) {
+    return;
+  }
+
   p->save();
 
   // Device coordinates:
@@ -68,4 +73,14 @@ void Target::takeStep(double t)
     m_direction.z() = -fabs(m_direction.z());
     m_pos.z() = maxVal;
   }
+}
+
+bool Target::visible()
+{
+  return Target::m_visible;
+}
+
+void Target::setVisible(bool visible)
+{
+  Target::m_visible = visible;
 }

@@ -171,6 +171,10 @@ void FlockWidget::keyPressEvent(QKeyEvent *e)
     }
     break;
 
+  case Qt::Key_T:
+    Target::setVisible(!Target::visible());
+    break;
+
   case Qt::Key_Up:
     m_engine->setStepSize(m_engine->stepSize() * 1.25);
     break;
