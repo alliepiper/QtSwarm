@@ -6,7 +6,8 @@ SOURCES += \
     entity.cpp \
     distancecache.cpp \
     predator.cpp \
-    blast.cpp
+    blast.cpp \
+    flockengine.cpp
 
 HEADERS += \
     flocker.h \
@@ -15,7 +16,8 @@ HEADERS += \
     entity.h \
     distancecache.h \
     predator.h \
-    blast.h
+    blast.h \
+    flockengine.h
 
 QT += \
     widgets \

@@ -18,7 +18,7 @@ int main(int argc, char **argv)
   if (argc >= 2) {
     int argInd = 0;
     while (char *arg = argv[argInd++]) {
-      if (std::strcmp(arg, "-f") == true) {
+      if (strcmp(arg, "-f") == true) {
         fullscreen = true;
       }
     }
