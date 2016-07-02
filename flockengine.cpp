@@ -98,6 +98,7 @@ FlockEngine::FlockEngine(QObject *parent)
     m_numPredators(30),
     m_numPredatorTypes(3),
     m_numTargetsPerFlockerType(3),
+    m_stepSize(1.),
     m_initialSpeed(0.0050),
     m_minSpeed(    0.0015),
     m_maxSpeed(    0.0075)
@@ -372,6 +373,16 @@ FlockEngine::takeStepWorker(const Flocker *f_i) const
   return result;
 }
 
+double FlockEngine::stepSize() const
+{
+  return m_stepSize;
+}
+
+void FlockEngine::setStepSize(double size)
+{
+  m_stepSize = size;
+}
+
 unsigned int FlockEngine::numTargetsPerFlockerType() const
 {
   return m_numTargetsPerFlockerType;
@@ -433,7 +444,9 @@ QColor FlockEngine::typeToColor(const unsigned int type)
 namespace {
 struct EntityStepFunctor
 {
-  void operator()(Entity *e) const { e->takeStep(); }
+  double m_t;
+  EntityStepFunctor(double t) : m_t(t) {}
+  void operator()(Entity *e) const { e->takeStep(m_t); }
 };
 }
 
@@ -483,7 +496,8 @@ void FlockEngine::commitNextStep()
     this->randomizeTarget(t);
   }
 
-  QFuture<void> stepFuture = QtConcurrent::map(m_entities, EntityStepFunctor());
+  QFuture<void> stepFuture = QtConcurrent::map(m_entities,
+                                               EntityStepFunctor(m_stepSize));
   qApp->processEvents();
   stepFuture.waitForFinished();
 }

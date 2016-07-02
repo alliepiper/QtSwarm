@@ -41,7 +41,7 @@ public:
 
 public slots:
   virtual void draw(QPainter *p) = 0;
-  virtual void takeStep() = 0;
+  virtual void takeStep(double t) = 0;
 
 protected:
   unsigned int m_id;

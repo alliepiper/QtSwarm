@@ -140,27 +140,33 @@ void FlockWidget::paintEvent(QPaintEvent *)
 
 void FlockWidget::keyPressEvent(QKeyEvent *e)
 {
-  if (e->key() == Qt::Key_Q) {
-    m_aborted = true;
-    return;
-  }
-  else if (e->key() == Qt::Key_B) {
-    if (m_engine->createBlasts()) {
-      m_engine->setCreateBlasts(false);
-    }
-    else {
-      m_engine->setCreateBlasts(true);
-    }
-  }
-  else if (e->key() == Qt::Key_F)
+  switch (e->key())
   {
-    // Doesn't seem to be working in windows 10...
+  case Qt::Key_Q:
+    m_aborted = true;
+    break;
+
+  case Qt::Key_B:
+    m_engine->setCreateBlasts(!m_engine->createBlasts());
+    break;
+
+  case Qt::Key_F:
+    // Doesn't seem to work...maybe only works before window is shown.
     if (this->isFullScreen()) {
       this->showNormal();
     }
     else {
       this->showFullScreen();
     }
+    break;
+
+  case Qt::Key_Up:
+    m_engine->setStepSize(m_engine->stepSize() * 1.25);
+    break;
+
+  case Qt::Key_Down:
+    m_engine->setStepSize(m_engine->stepSize() * 0.8);
+    break;
   }
 
   QWidget::keyPressEvent(e);

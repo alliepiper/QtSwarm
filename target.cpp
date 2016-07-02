@@ -32,9 +32,9 @@ void Target::draw(QPainter *p)
   p->restore();
 }
 
-void Target::takeStep()
+void Target::takeStep(double t)
 {
-  m_pos += m_velocity * m_direction;
+  m_pos += m_velocity * m_direction * t;
 
   // Use a reduced boundary for these -- keeps the flockers from bouncing off
   // of the walls as much

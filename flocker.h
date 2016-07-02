@@ -14,7 +14,7 @@ public:
   
 public slots:
   virtual void draw(QPainter *p);
-  virtual void takeStep();
+  virtual void takeStep(double t);
 
 protected:
   void drawInternal(QPainter *p, Qt::BrushStyle style);

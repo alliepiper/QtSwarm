@@ -23,9 +23,9 @@ void Flocker::draw(QPainter *p)
   drawInternal(p, Qt::SolidPattern);
 }
 
-void Flocker::takeStep()
+void Flocker::takeStep(double t)
 {
-  m_pos += m_velocity * m_direction;
+  m_pos += m_velocity * m_direction * t;
 
   // Bounce at boundaries, slow down
   const double bounceSlowdownFactor = 0.50;

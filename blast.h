@@ -14,7 +14,7 @@ public:
 
 public slots:
   void draw(QPainter *p);
-  void takeStep();
+  void takeStep(double t);
 
 private:
   bool m_done;

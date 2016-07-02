@@ -41,7 +41,7 @@ void Blast::draw(QPainter *p)
   p->restore();
 }
 
-void Blast::takeStep()
+void Blast::takeStep(double t)
 {
   if (!m_done) {
     if (m_repeat++ > maxRepeat) {

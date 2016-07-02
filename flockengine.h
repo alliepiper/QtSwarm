@@ -46,6 +46,9 @@ public:
 
   unsigned int numTargetsPerFlockerType() const;
 
+  double stepSize() const;
+  void setStepSize(double size);
+
 private:
   void initializeFlockers();
   void cleanupFlockers();
@@ -93,6 +96,7 @@ private:
   unsigned int m_numPredatorTypes;
   unsigned int m_numTargetsPerFlockerType;
 
+  double m_stepSize;
   double m_initialSpeed;
   double m_minSpeed;
   double m_maxSpeed;
